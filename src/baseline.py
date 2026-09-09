@@ -10,7 +10,8 @@ from sklearn.metrics import roc_auc_score, average_precision_score, classificati
 
 
 # 1. Adatbetöltés
-df = pd.read_csv("../data/raw/BankSim.csv")
+#df = pd.read_csv("../data/raw/BankSim.csv")
+df = pd.read_csv("../data/processed/dataset_with_clusters_final.csv")
 
 # 2. Alapinfó: oszlopok, dtype-ok, alak
 print("=== Alak ===")
@@ -34,7 +35,8 @@ print("\n=== Fraud osztályeloszlás (arány, %) ===")
 print(df["fraud"].value_counts(normalize=True) * 100)
 
 # 1. Releváns oszlopok kiválasztása
-feature_cols = ["step", "age", "gender", "merchant", "category", "amount"] #a customer-t kivettem belőle, mert a gépem nem bírta el a OneHot-ingot a customer-szinten
+#feature_cols = ["step", "age", "gender", "category", "amount"] #a customer-t és merchant-t kivettem belőle, mert a gépem nem bírta el a OneHot-ingot a customer-szinten, a merchant pedig nem releváns infó detektálás szepontjából
+feature_cols = ["step", "age", "gender", "category", "amount", "cluster"] #dataset-with-clusters-final.csv futtatásakor
 df_features = df[feature_cols].copy()
 
 # 2. Célváltozó leválasztása
@@ -44,7 +46,7 @@ y = df["fraud"].copy()
 groups = df["customer"].copy()
 
 # 4. Kategorikus / numerikus oszlopok szétválasztása
-categorical_cols = ["age", "gender", "merchant", "category"]
+categorical_cols = ["age", "gender", "category"]
 numeric_cols = ["step", "amount"]
 
 # 5. OneHotEncoder a kategorikus oszlopokra
@@ -177,19 +179,22 @@ for metric in ["auc_roc", "auc_pr", "precision_fraud", "recall_fraud", "f1_fraud
     print(f"{metric}: {best_row['model']} ({best_row[metric]:.4f})")
 
 # --- 8. Eredmények mentése ---
-csv_path = "../metrics/baseline_met_results.csv"
+#csv_path = "../metrics/baseline_met_results.csv"
+csv_path = "../metrics/baseline_met_results_with_clusters.csv"
 if os.path.exists(csv_path):
     comparison_df.to_csv(csv_path, mode="a", header=False, index=False)
 else:
     comparison_df.to_csv(csv_path, mode="w", header=True, index=False)
 
 # JSON mentés (readable, egy külön fájl per futtatás)
-json_path = "../metrics/baseline_metrics_results.json"
+#json_path = "../metrics/baseline_metrics_results.json"
+json_path = "../metrics/baseline_metrics_results_with_clusters.json"
 comparison_df.to_json(json_path, orient="records", indent=2, force_ascii=False)
 
 print(f"\nEredmények elmentve ide: {csv_path} (append módban) és {json_path}")
 
 for name, model in models.items():
-    model_path = f"../models/banksim_baseline_{name}.joblib"
+#    model_path = f"../models/banksim_baseline_{name}.joblib"
+    model_path = f"../models/banksim_clsuter_baseline_{name}.joblib"
     joblib.dump(model, model_path)
     print(f"{name} elmentve: {model_path}")
