@@ -1,11 +1,10 @@
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
-from sklearn.cluster import KMeans
-from sklearn.metrics import silhouette_score
-import time
-import matplotlib.pyplot as plt
+
 
 # --- 1. Adat betöltése ---
 input_path = "../data/raw/BankSim.csv"
@@ -67,58 +66,85 @@ X_df = pd.DataFrame(X, columns=all_feature_names, index=df_features.index)
 print(f"Feature-mátrix alakja: {X_df.shape}")
 print(f"Feature-ek: {list(X_df.columns)}")
 
-k_range = range(5, 11)  # 5,6,7,8,9,10
-results = []
+# --- Végső k explicit megadása ---
+final_k = 9  # <-- ide írd be a döntésed (silhouette + elbow együttes mérlegelése alapján)
 
-for k in k_range:
-    start = time.time()
+# --- Végleges K-Means illesztése ---
+final_kmeans = KMeans(n_clusters=final_k, random_state=42, n_init=10)
+cluster_labels = final_kmeans.fit_predict(X)
 
-    kmeans = KMeans(n_clusters=5, random_state=42, n_init=10)
-    labels = kmeans.fit_predict(X)
+# --- Cluster-címke hozzáadása az eredeti (tisztított, de nem transzformált) datasethez ---
+df_features["cluster"] = cluster_labels
 
-    inertia = kmeans.inertia_
-    sil_score = silhouette_score(X, labels)
+# --- Fraud oszlop visszacsatolása csak ellenőrzés/profilozás céljából ---
+df_features["fraud"] = y_fraud
 
-    elapsed = time.time() - start
+print(f"Végleges klaszterszám: {final_k}")
+print(df_features["cluster"].value_counts().sort_index())
 
-    results.append({
-        "k": 5,
-        "inertia": inertia,
-        "silhouette": sil_score,
-        "time_sec": elapsed
-    })
+# --- Gyors ellenőrzés: fraud arány klaszterenként ---
+fraud_rate_by_cluster = df_features.groupby("cluster")["fraud"].mean().sort_values(ascending=False)
+print("\nFraud arány klaszterenként:")
+print(fraud_rate_by_cluster)
 
-    print(f"k={5}: inertia={inertia:.2f}, silhouette={sil_score:.4f}, idő={elapsed:.1f}s")
+# --- Mentés ---
+output_path = "../data/processed/dataset_with_clusters.csv"
+df_features.to_csv(output_path, index=False)
+print(f"\nMentve: {output_path}")
 
-results_df = pd.DataFrame(results)
-print(results_df)
+# --- Klaszterenkénti elemszám és fraud arány ---
+cluster_summary = df_features.groupby("cluster").agg(
+    count=("fraud", "size"),
+    fraud_count=("fraud", "sum"),
+    fraud_rate=("fraud", "mean")
+).sort_values("fraud_rate", ascending=False)
 
-fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+# --- Globális fraud arány (viszonyítási alap) ---
+global_fraud_rate = df_features["fraud"].mean()
+cluster_summary["lift"] = cluster_summary["fraud_rate"] / global_fraud_rate
 
-# --- Elbow-görbe (inertia) ---
-axes[0].plot(results_df["k"], results_df["inertia"], marker="o")
-axes[0].set_xlabel("k (klaszterszám)")
-axes[0].set_ylabel("Inertia")
-axes[0].set_title("Elbow-módszer")
-axes[0].set_xticks(results_df["k"])
-axes[0].grid(alpha=0.3)
+print(f"Globális fraud arány: {global_fraud_rate:.4f}\n")
+print(cluster_summary)
 
-# --- Silhouette score ---
-axes[1].plot(results_df["k"], results_df["silhouette"], marker="o", color="darkorange")
-axes[1].set_xlabel("k (klaszterszám)")
-axes[1].set_ylabel("Silhouette score")
-axes[1].set_title("Silhouette score k függvényében")
-axes[1].set_xticks(results_df["k"])
-axes[1].grid(alpha=0.3)
+# --- Mentés ---
+cluster_summary.to_csv("../data/processed/cluster_fraud_summary.csv")
 
+fig, ax = plt.subplots(figsize=(10, 8))
+ax.set_ylim(0, 0.21)
+ax.set_yticks(np.arange(0, 0.201, 0.02))
+
+# Klaszterek sorrendje fraud_rate szerint csökkenő (már így van a cluster_summary-ban)
+clusters = cluster_summary.index.astype(str)
+fraud_rates = cluster_summary["fraud_rate"]
+counts = cluster_summary["count"]
+
+bars = ax.bar(clusters, fraud_rates, color="firebrick", alpha=0.8)
+
+# Globális átlag vonal
+ax.axhline(global_fraud_rate, color="gray", linestyle="--", linewidth=1.5,
+           label=f"Globális átlag ({global_fraud_rate:.3f})")
+
+# Elemszám feltüntetése minden oszlop tetején
+for bar, count in zip(bars, counts):
+    height = bar.get_height()
+    ax.text(bar.get_x() + bar.get_width() / 2, height,
+             f"n={count:,}", ha="center", va="bottom", fontsize=8, rotation=0)
+
+ax.set_xlabel("Klaszter")
+ax.set_ylabel("Fraud arány")
+ax.set_title(f"Csalási arány klaszterenként (k={final_k})")
+ax.legend()
 plt.tight_layout()
-plt.savefig("../plots/kmeans_k_selection.png", dpi=150)
+plt.savefig("../plots/cluster_fraud_rate_bar.png", dpi=150)
 plt.show()
 
-# --- Legjobb k silhouette alapján ---
-best_k_silhouette = results_df.loc[results_df["silhouette"].idxmax(), "k"]
-print(f"Silhouette alapján legjobb k: {best_k_silhouette}")
+# --- Végleges, tiszta kimeneti oszlopok kiválasztása ---
+df["cluster"] = cluster_labels
 
-# --- Inertia relatív csökkenése k-ról k+1-re (elbow-töréspont numerikus jelzése) ---
-results_df["inertia_drop_pct"] = results_df["inertia"].pct_change() * -100
-print(results_df[["k", "inertia", "inertia_drop_pct", "silhouette"]])
+# --- Mentés ---
+final_output_path = "../data/processed/dataset_with_clusters_final.csv"
+df.to_csv(final_output_path, index=False)
+
+print(f"Végleges adathalmaz mentve: {final_output_path}")
+print(f"Alak: {df.shape}")
+print(df.head())
