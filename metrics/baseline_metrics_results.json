@@ -1,0 +1,32 @@
+[
+  {
+    "dataset":"BankSim",
+    "model":"RandomForest",
+    "auc_roc":0.9806699929,
+    "auc_pr":0.8641664203,
+    "precision_fraud":0.8506533914,
+    "recall_fraud":0.7594444444,
+    "f1_fraud":0.8024655122,
+    "fit_time_sec":18.9215188026,
+    "tn":146621,
+    "fp":240,
+    "fn":433,
+    "tp":1367,
+    "n_test":148661
+  },
+  {
+    "dataset":"BankSim",
+    "model":"HistGradientBoosting",
+    "auc_roc":0.9977049784,
+    "auc_pr":0.8968850712,
+    "precision_fraud":0.3340961098,
+    "recall_fraud":0.9733333333,
+    "f1_fraud":0.4974446337,
+    "fit_time_sec":4.5530965328,
+    "tn":143369,
+    "fp":3492,
+    "fn":48,
+    "tp":1752,
+    "n_test":148661
+  }
+]
