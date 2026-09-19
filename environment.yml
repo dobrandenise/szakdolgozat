@@ -1,0 +1,28 @@
+name: szakdolgozat
+
+channels:
+  - rapidsai
+  - conda-forge
+  - pytorch
+  - nvidia
+
+dependencies:
+  - python=3.12
+  - rapids=26.02
+  - cuda-version=12.6
+
+  - matplotlib=3.10.*
+  - seaborn=0.13.*
+
+  - pytorch=2.8.*
+  - pytorch-cuda=12.6
+
+  - pip
+
+  - pip:
+      - torchmetrics==1.8.*
+      - torch-geometric==2.7.*
+
+      - optuna==4.9.0
+      - shap==0.49.1
+      - imbalanced-learn==0.14.0
