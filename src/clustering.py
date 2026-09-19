@@ -56,12 +56,12 @@ preprocessor = ColumnTransformer(
     ]
 )
 
-X = preprocessor.fit_transform(df_features[numeric_cols + categorical_cols])
+x = preprocessor.fit_transform(df_features[numeric_cols + categorical_cols])
 
 cat_feature_names = preprocessor.named_transformers_["categorical"].get_feature_names_out(categorical_cols)
 all_feature_names = numeric_cols + list(cat_feature_names)
 
-X_df = pd.DataFrame(X, columns=all_feature_names, index=df_features.index)
+X_df = pd.DataFrame(x, columns=all_feature_names, index=df_features.index)
 
 print(f"Feature-mátrix alakja: {X_df.shape}")
 print(f"Feature-ek: {list(X_df.columns)}")
@@ -71,7 +71,7 @@ final_k = 9  # <-- ide írd be a döntésed (silhouette + elbow együttes mérle
 
 # --- Végleges K-Means illesztése ---
 final_kmeans = KMeans(n_clusters=final_k, random_state=42, n_init=10)
-cluster_labels = final_kmeans.fit_predict(X)
+cluster_labels = final_kmeans.fit_predict(x)
 
 # --- Cluster-címke hozzáadása az eredeti (tisztított, de nem transzformált) datasethez ---
 df_features["cluster"] = cluster_labels

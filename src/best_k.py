@@ -57,12 +57,12 @@ preprocessor = ColumnTransformer(
     ]
 )
 
-X = preprocessor.fit_transform(df_features[numeric_cols + categorical_cols])
+x = preprocessor.fit_transform(df_features[numeric_cols + categorical_cols])
 
 cat_feature_names = preprocessor.named_transformers_["categorical"].get_feature_names_out(categorical_cols)
 all_feature_names = numeric_cols + list(cat_feature_names)
 
-X_df = pd.DataFrame(X, columns=all_feature_names, index=df_features.index)
+X_df = pd.DataFrame(x, columns=all_feature_names, index=df_features.index)
 
 print(f"Feature-mátrix alakja: {X_df.shape}")
 print(f"Feature-ek: {list(X_df.columns)}")
@@ -74,10 +74,10 @@ for k in k_range:
     start = time.time()
 
     kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
-    labels = kmeans.fit_predict(X)
+    labels = kmeans.fit_predict(x)
 
     inertia = kmeans.inertia_
-    sil_score = silhouette_score(X, labels)
+    sil_score = silhouette_score(x, labels)
 
     elapsed = time.time() - start
 

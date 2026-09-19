@@ -1,7 +1,9 @@
 import os
 import time
+from datetime import datetime
 
 import joblib
+import json
 import pandas as pd
 from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
 from sklearn.metrics import (
@@ -14,6 +16,7 @@ from sklearn.metrics import (
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OrdinalEncoder
 from preprocessor import Preprocessor
+from data_split import DataSplit
 
 
 class BaselineFraudExperiment:
@@ -29,6 +32,7 @@ class BaselineFraudExperiment:
     def __init__(
             self,
             data_path,
+            split_method="time",
             feature_cols=None,
             categorical_cols=None,
             numeric_cols=None,
@@ -39,6 +43,7 @@ class BaselineFraudExperiment:
         project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
         self.data_path = data_path
+        self.split_method = split_method
         self.feature_cols = feature_cols or [
             "step",
             "age",
@@ -46,23 +51,23 @@ class BaselineFraudExperiment:
             "category",
             "merchant",
             "amount",
-            "cluster",
         ]
         self.categorical_cols = categorical_cols or ["age", "gender", "category", "merchant"]
-        self.numeric_cols = numeric_cols or ["step", "amount", "cluster"]
+        self.numeric_cols = numeric_cols or ["step", "amount"]
         self.csv_path = csv_path or os.path.join(project_root, "metrics", "baseline_metrics_results.csv")
-        self.json_path = json_path or os.path.join(
-            project_root, "metrics", "baseline_metrics_results.json"
-        )
+        self.json_path = json_path or os.path.join(project_root, "metrics", "baseline_metrics_results.json")
         self.model_dir = model_dir or os.path.join(project_root, "models")
 
     def run(self):
-        df = self.load_data()
-        self.print_dataset_summary(df)
+        train_df, val_df, test_df = self.get_split()
+        # val_df jelenleg nincs felhasználva itt — később pl. threshold-hangoláshoz
+        # vagy early stoppinghoz tartjuk fenn.
+        self.print_dataset_summary(train_df)
 
-        df_features, y, groups = self.prepare_target_and_features(df)
-        x = self.encode_features(df_features)
-        x_train, x_test, y_train, y_test = self.split_dataset(x, y)
+        # >>> MÓDOSÍTVA: külön train/test feature-tábla, majd fit csak a train-en
+        train_features, y_train, _ = self.prepare_target_and_features(train_df)
+        test_features, y_test, _ = self.prepare_target_and_features(test_df)
+        x_train, x_test = self.encode_features(train_features, test_features)
 
         self.print_split_summary(x_train, x_test, y_train, y_test)
 
@@ -83,6 +88,21 @@ class BaselineFraudExperiment:
         self.print_model_comparison(comparison_df)
         self.save_results(comparison_df)
         self.save_models(models)
+
+    def get_split(self):
+        """
+        A self.split_method alapján hívja meg a DataSplit két függvénye
+        közül a megfelelőt, és visszaadja a (train_df, val_df, test_df)
+        hármast.
+        """
+        splitter = DataSplit(csv_path=self.data_path)
+
+        if self.split_method == "customer":
+            return splitter.customer_split()
+        elif self.split_method == "time":
+            return splitter.time_split()
+        else:
+            raise ValueError(f"Ismeretlen split_method: {self.split_method!r} (csak 'time' vagy 'customer' lehet)")
 
     def load_data(self):
         return pd.read_csv(self.data_path)
@@ -112,16 +132,24 @@ class BaselineFraudExperiment:
         groups = df["customer"].copy() if "customer" in df.columns else None
         return df_features, y, groups
 
-    def encode_features(self, df_features):
+    def encode_features(self, train_features, test_features):
+        # két df-et vár (train, test); az encoder csak a train-en
+        # fit-el, a teszten csak transform — elkerülve, hogy a teszt kategóriái
+        # befolyásolják a kódolást.
         encoder = OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1)
-        encoded_cats = encoder.fit_transform(df_features[self.categorical_cols])
-        encoded_df = pd.DataFrame(encoded_cats, columns=self.categorical_cols, index=df_features.index)
+        encoder.fit(train_features[self.categorical_cols])
 
-        x = pd.concat([encoded_df, df_features[self.numeric_cols]], axis=1)
+        def _transform(df_features):
+            encoded_cats = encoder.transform(df_features[self.categorical_cols])
+            encoded_df = pd.DataFrame(encoded_cats, columns=self.categorical_cols, index=df_features.index)
+            return pd.concat([encoded_df, df_features[self.numeric_cols]], axis=1)
 
-        print("x alakja:", x.shape)
-        print("x oszlopai:\n", list(x.columns))
-        return x
+        x_train = _transform(train_features)
+        x_test = _transform(test_features)
+
+        print("x_train alakja:", x_train.shape)
+        print("x_train oszlopai:\n", list(x_train.columns))
+        return x_train, x_test
 
     def split_dataset(self, x, y):
         return train_test_split(x,y,test_size=0.25,stratify=y,random_state=42,)
@@ -211,6 +239,8 @@ class BaselineFraudExperiment:
                     "fn": fn,
                     "tp": tp,
                     "n_test": len(y_test),
+                    "run_date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "data_split": self.split_method,
                 }
             )
 
@@ -229,12 +259,29 @@ class BaselineFraudExperiment:
         os.makedirs(os.path.dirname(self.csv_path), exist_ok=True)
         os.makedirs(os.path.dirname(self.json_path), exist_ok=True)
 
+        # CSV: append to existing file if present
         if os.path.exists(self.csv_path):
             comparison_df.to_csv(self.csv_path, mode="a", header=False, index=False)
         else:
             comparison_df.to_csv(self.csv_path, mode="w", header=True, index=False)
 
-        comparison_df.to_json(self.json_path, orient="records", indent=2, force_ascii=False)
+        # JSON: append to existing file if present
+        # Use pandas to_json -> json.loads to ensure native Python types (avoids numpy types issues)
+        records = json.loads(comparison_df.to_json(orient='records', force_ascii=False))
+        if os.path.exists(self.json_path):
+            try:
+                with open(self.json_path, 'r', encoding='utf-8') as jf:
+                    existing = json.load(jf)
+                if not isinstance(existing, list):
+                    existing = [existing]
+            except Exception:
+                existing = []
+            combined = existing + records
+        else:
+            combined = records
+
+        with open(self.json_path, 'w', encoding='utf-8') as jf:
+            json.dump(combined, jf, ensure_ascii=False, indent=2)
 
         print(f"\nEredmények elmentve ide: {self.csv_path} (append módban) és {self.json_path}")
 
@@ -251,5 +298,6 @@ if __name__ == "__main__":
     preprocessor = Preprocessor(input_path="../data/raw/BankSim.csv")
     cleaned_df = preprocessor.run()
 
-    experiment = BaselineFraudExperiment(data_path=preprocessor.output_path)
-    experiment.run()
+    for method in ("time", "customer"):
+        experiment = BaselineFraudExperiment(data_path=preprocessor.output_path, split_method=method)
+        experiment.run()
