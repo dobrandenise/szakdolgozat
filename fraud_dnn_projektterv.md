@@ -131,7 +131,7 @@ Egy gyors RandomForest (150 fa, max_depth=12, class_weight="balanced") illeszté
 
 ### 1.10 Velocity-jellegű jelek — korlátozott érvényesség ezen a datasetten
 
-Ügyfelenkénti napi tranzakciószám: átlag **1,039** (SD 0,21), **max 5**. Ez azt jelenti, hogy a klasszikus "sebesség" (velocity) alapú csalásjelzők (pl. "X tranzakció Y percen belül") ezen a *szimulált* datasetten **eleve gyenge szignált** adnak, mert a generátor szinte mindig legfeljebb napi 1 tranzakciót rendel egy ügyfélhez. Ez fontos korlátozás: a 4. fejezetben javasolt velocity-feature-öket inkább **termelési robusztusság / jövőbeli valós adat** céljából érdemes implementálni, nem azért, mert *ezen* a datasetten nagy hozamot várnánk tőlük.
+Ügyfelenkénti napi tranzakciószám: átlag **1,039** (SD 0,21), **max 5**. Ez azt jelenti, hogy a klasszikus "sebesség" (velocity) alapú csalásjelzők (pl. "x tranzakció Y percen belül") ezen a *szimulált* datasetten **eleve gyenge szignált** adnak, mert a generátor szinte mindig legfeljebb napi 1 tranzakciót rendel egy ügyfélhez. Ez fontos korlátozás: a 4. fejezetben javasolt velocity-feature-öket inkább **termelési robusztusság / jövőbeli valós adat** céljából érdemes implementálni, nem azért, mert *ezen* a datasetten nagy hozamot várnánk tőlük.
 
 ### 1.11 Ügyfél-szintű profil és a leakage kockázata
 
