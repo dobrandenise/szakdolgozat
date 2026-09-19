@@ -4,7 +4,6 @@ channels:
   - rapidsai
   - conda-forge
   - pytorch
-  - nvidia
 
 dependencies:
   - python=3.12
@@ -15,7 +14,6 @@ dependencies:
   - seaborn=0.13.*
 
   - pytorch=2.8.*
-  - pytorch-cuda=12.6
 
   - pip
 
