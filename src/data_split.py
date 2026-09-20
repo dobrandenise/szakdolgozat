@@ -2,9 +2,9 @@ import pandas as pd
 
 class DataSplit:
     """
-    Train/validation/test particionálás a megtisztított CSV-n.
+    Train/validation/test particionálás egy meglévő DataFrame-en.
 
-    Bemenet: a megtisztított CSV elérési útja (csv_path).
+    Bemenet: a feldolgozott DataFrame (df).
 
     Két particionálási stratégiát kínál:
 
@@ -18,8 +18,8 @@ class DataSplit:
         nélkül.
     """
 
-    def __init__(self, csv_path, train_ratio=0.6, val_ratio=0.2, test_ratio=0.2, random_state=42):
-        self.csv_path = csv_path
+    def __init__(self, df, train_ratio=0.6, val_ratio=0.2, test_ratio=0.2, random_state=42):
+        self.df = df.copy()
         self.train_ratio = train_ratio
         self.val_ratio = val_ratio
         self.test_ratio = test_ratio
@@ -29,17 +29,17 @@ class DataSplit:
         if abs(total - 1.0) > 1e-9:
             raise ValueError(f"A train/val/test arányoknak 1.0-ra kell összegződniük, jelenleg: {total}")
 
-    def load_data(self):
-        return pd.read_csv(self.csv_path)
-
-    def customer_split(self):
+    def customer_split(self) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """
         Customerenkénti 60/20/20 split: a customer-ek véletlenszerűen
         (self.random_state alapján, reprodukálhatóan) kerülnek train/val/test
         csoportba, majd mindhárom rész step szerint növekvő sorrendbe
         rendeződik.
         """
-        df = self.load_data()
+
+        print("=== Customer split futtatása ===")
+
+        df = self.df
 
         customers = (df["customer"].drop_duplicates().sample(frac=1.0, random_state=self.random_state).reset_index(drop=True))
 
@@ -66,13 +66,15 @@ class DataSplit:
 
         return train_df, val_df, test_df
 
-    def time_split(self):
+    def time_split(self) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """
         Tisztán step szerinti (idősoros) 60/20/20 split: a teljes adatot
         step szerint növekvő sorrendbe rendezi, majd sorrendben vágja
         train/val/test részekre (customer-csoportosítás nélkül).
         """
-        df = self.load_data().sort_values("step").reset_index(drop=True)
+        print("=== Time split futtatása ===")
+
+        df = self.df.sort_values("step").reset_index(drop=True)
 
         n = len(df)
         n_train = int(n * self.train_ratio)
@@ -91,7 +93,9 @@ class DataSplit:
 
 
 if __name__ == "__main__":
-    splitter = DataSplit(csv_path="../data/processed/dataset_cleaned.csv")
+
+    dataframe = pd.read_csv("../data/processed/dataset_cleaned.csv")
+    splitter = DataSplit(dataframe)
 
     train_c, val_c, test_c = splitter.customer_split()
     train_t, val_t, test_t = splitter.time_split()

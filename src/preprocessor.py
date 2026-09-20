@@ -1,5 +1,6 @@
 import os
 import pandas as pd
+from sklearn.preprocessing import OrdinalEncoder
 
 class Preprocessor:
     """
@@ -23,32 +24,21 @@ class Preprocessor:
             self,
             input_path,
             output_path=None,
-            strip_quote_cols=None,
-            constant_cols_to_drop=None,
+            strip_quote_cols= ["customer", "age", "gender", "merchant", "category"],
+            constant_cols_to_drop= ["zipcodeOri", "zipMerchant"],
     ):
         self.input_path = input_path
         self.output_path = output_path or self._default_output_path(input_path)
 
-        self.strip_quote_cols = strip_quote_cols or [
-            "customer",
-            "age",
-            "gender",
-            "merchant",
-            "zipcodeOri",
-            "zipMerchant",
-            "category",
-        ]
-        self.constant_cols_to_drop = constant_cols_to_drop or [
-            "zipcodeOri",
-            "zipMerchant",
-        ]
+        self.strip_quote_cols = strip_quote_cols
+        self.constant_cols_to_drop = constant_cols_to_drop
 
     @staticmethod
     def _default_output_path(input_path):
         base_dir = os.path.dirname(input_path)
         return os.path.join(base_dir, "dataset_cleaned.csv")
 
-    def load_data(self):
+    def load_data(self) -> pd.DataFrame:
         return pd.read_csv(self.input_path)
 
     def strip_quotes(self, df):
@@ -56,6 +46,22 @@ class Preprocessor:
             if col in df.columns:
                 df[col] = df[col].astype(str).str.strip("'")
         return df
+
+    def encode_categorical_columns(self, df):
+        categorical_cols = ["age", "gender", "category", "merchant", "customer"]
+        missing_cols = [col for col in categorical_cols if col not in df.columns]
+        if missing_cols:
+            raise ValueError(f"Hiányzó kategorikus oszlop(ok): {missing_cols}")
+
+        encoder = OrdinalEncoder(
+            handle_unknown="use_encoded_value",
+            unknown_value=-1,
+        )
+        encoded_df = df.copy()
+        encoded_df[categorical_cols] = encoder.fit_transform(
+            encoded_df[categorical_cols]
+        )
+        return encoded_df
 
     def drop_constant_columns(self, df):
         cols_present = [c for c in self.constant_cols_to_drop if c in df.columns]
@@ -80,7 +86,7 @@ class Preprocessor:
             print(f"Hiányzó értékes sorok eldobva: {before - after}")
         return df
 
-    def clean(self, df):
+    def clean(self, df) -> pd.DataFrame:
         df = self.strip_quotes(df)
         df = self.drop_constant_columns(df)
         df = self.drop_duplicates(df)
@@ -94,7 +100,7 @@ class Preprocessor:
         df.to_csv(self.output_path, index=False)
         print(f"Tisztított adat elmentve ide: {self.output_path}")
 
-    def run(self):
+    def run(self) -> pd.DataFrame:
         df = self.load_data()
         print("=== Nyers adat alakja ===")
         print(df.shape)
