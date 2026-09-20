@@ -117,12 +117,10 @@ class FeatureEngineering:
         return self
 
     # ------------------------------------------------------------------
-    # #3 / #4 amount_zscore_customer / amount_ratio_customer
-    # (+ #7 customer_fraud_prior, #8 customer_tx_count_hist mellékterméke
-    #   nélkül itt -- azokat az add_customer_fraud_prior() adja)
+    # #3 amount_zscore_customer
     # ------------------------------------------------------------------
 
-    def add_customer_amount_stats(self):
+    def _customer_amount_history(self):
         self.df["_amount_sq"] = self.df[self.amount_col] ** 2
         self.df["_ones"] = 1
 
@@ -137,14 +135,23 @@ class FeatureEngineering:
         hist_var = np.where(n > 1, amount_sumsq / n.replace(0, np.nan) - hist_mean**2, np.nan)
         hist_std = np.sqrt(np.clip(hist_var, a_min=0, a_max=None))
 
+        self.df = self.df.drop(columns=["_amount_sq", "_ones"])
+        return n, hist_mean, hist_std
+
+    def add_amount_zscore_customer(self):
+        n, hist_mean, hist_std = self._customer_amount_history()
         self.df["amount_zscore_customer"] = np.where(
             (n > 1) & (hist_std > 0), (self.df[self.amount_col] - hist_mean) / hist_std, 0.0
         )
+        return self
+
+    # #4 amount_ratio_customer
+
+    def add_amount_ratio_customer(self):
+        n, hist_mean, _ = self._customer_amount_history()
         self.df["amount_ratio_customer"] = np.where(
             (n > 0) & (hist_mean > 0), self.df[self.amount_col] / hist_mean, 1.0
         )
-
-        self.df = self.df.drop(columns=["_amount_sq", "_ones"])
         return self
 
     # ------------------------------------------------------------------
@@ -192,19 +199,27 @@ class FeatureEngineering:
         return self
 
     # ------------------------------------------------------------------
-    # #7 customer_fraud_prior, #8 customer_tx_count_hist
+    # #7 customer_fraud_prior
     # ------------------------------------------------------------------
 
-    def add_customer_fraud_prior(self):
+    def _customer_fraud_history(self):
         self.df["_ones"] = 1
         hist = self._causal_daily_history(self.customer_col, ["_ones", self.fraud_col])
         n = hist["hist__ones"]
         fraud_sum = hist[f"hist_{self.fraud_col}"]
-
-        self.df["customer_tx_count_hist"] = n.astype(int)
-        self.df["customer_fraud_prior"] = self._bayes_smooth(fraud_sum, n)
-
         self.df = self.df.drop(columns=["_ones"])
+        return n, fraud_sum
+
+    def add_customer_fraud_prior(self):
+        n, fraud_sum = self._customer_fraud_history()
+        self.df["customer_fraud_prior"] = self._bayes_smooth(fraud_sum, n)
+        return self
+
+    # #8 customer_tx_count_hist
+
+    def add_customer_tx_count_hist(self):
+        n, _ = self._customer_fraud_history()
+        self.df["customer_tx_count_hist"] = n.astype(int)
         return self
 
     # ------------------------------------------------------------------
@@ -259,35 +274,51 @@ class FeatureEngineering:
         return self
 
     # ------------------------------------------------------------------
-    # #12 merchant_fraud_prior, merchant_tx_count_hist
+    # #12 merchant_fraud_prior
     # ------------------------------------------------------------------
 
-    def add_merchant_fraud_prior(self):
+    def _merchant_fraud_history(self):
         self.df["_ones"] = 1
         hist = self._causal_daily_history(self.merchant_col, ["_ones", self.fraud_col])
         n = hist["hist__ones"]
         fraud_sum = hist[f"hist_{self.fraud_col}"]
-
-        self.df["merchant_tx_count_hist"] = n.astype(int)
-        self.df["merchant_fraud_prior"] = self._bayes_smooth(fraud_sum, n)
-
         self.df = self.df.drop(columns=["_ones"])
+        return n, fraud_sum
+
+    def add_merchant_fraud_prior(self):
+        n, fraud_sum = self._merchant_fraud_history()
+        self.df["merchant_fraud_prior"] = self._bayes_smooth(fraud_sum, n)
+        return self
+
+    # #12b merchant_tx_count_hist
+
+    def add_merchant_tx_count_hist(self):
+        n, _ = self._merchant_fraud_history()
+        self.df["merchant_tx_count_hist"] = n.astype(int)
         return self
 
     # ------------------------------------------------------------------
-    # #13 category_fraud_prior, category_tx_count_hist
+    # #13 category_fraud_prior
     # ------------------------------------------------------------------
 
-    def add_category_fraud_prior(self):
+    def _category_fraud_history(self):
         self.df["_ones"] = 1
         hist = self._causal_daily_history(self.category_col, ["_ones", self.fraud_col])
         n = hist["hist__ones"]
         fraud_sum = hist[f"hist_{self.fraud_col}"]
-
-        self.df["category_tx_count_hist"] = n.astype(int)
-        self.df["category_fraud_prior"] = self._bayes_smooth(fraud_sum, n)
-
         self.df = self.df.drop(columns=["_ones"])
+        return n, fraud_sum
+
+    def add_category_fraud_prior(self):
+        n, fraud_sum = self._category_fraud_history()
+        self.df["category_fraud_prior"] = self._bayes_smooth(fraud_sum, n)
+        return self
+
+    # #13b category_tx_count_hist
+
+    def add_category_tx_count_hist(self):
+        n, _ = self._category_fraud_history()
+        self.df["category_tx_count_hist"] = n.astype(int)
         return self
 
     # ------------------------------------------------------------------
@@ -305,10 +336,10 @@ class FeatureEngineering:
         return self
 
     # ------------------------------------------------------------------
-    # #15 tx_count_last_7d / tx_count_last_30d
+    # #15 tx_count_last_n_days
     # ------------------------------------------------------------------
 
-    def add_tx_count_last_n_days(self, windows=(7, 30)):
+    def _tx_count_last_n_days(self, window):
         self.df["_ones"] = 1
         daily = (
             self.df.groupby([self.customer_col, self.step_col])["_ones"]
@@ -317,24 +348,29 @@ class FeatureEngineering:
             .sort_values([self.customer_col, self.step_col], kind="mergesort")
         )
 
-        for w in windows:
-            col_name = f"tx_count_last_{w}d"
-            rolling_vals = (
-                daily.groupby(self.customer_col)["_ones"]
-                .apply(lambda s: s.rolling(window=w, min_periods=1).sum().shift(1).fillna(0.0))
-                .reset_index(level=0, drop=True)
-            )
-            daily[col_name] = rolling_vals.values
+        col_name = f"tx_count_last_{window}d"
+        rolling_vals = (
+            daily.groupby(self.customer_col)["_ones"]
+            .apply(lambda s: s.rolling(window=window, min_periods=1).sum().shift(1).fillna(0.0))
+            .reset_index(level=0, drop=True)
+        )
+        daily[col_name] = rolling_vals.values
 
-            merged = self.df[[self.customer_col, self.step_col]].merge(
-                daily[[self.customer_col, self.step_col, col_name]],
-                on=[self.customer_col, self.step_col],
-                how="left",
-            )
-            self.df[col_name] = merged[col_name].fillna(0.0).astype(int).values
+        merged = self.df[[self.customer_col, self.step_col]].merge(
+            daily[[self.customer_col, self.step_col, col_name]],
+            on=[self.customer_col, self.step_col],
+            how="left",
+        )
+        self.df[col_name] = merged[col_name].fillna(0.0).astype(int).values
 
         self.df = self.df.drop(columns=["_ones"])
         return self
+
+    def add_tx_count_last_7d(self):
+        return self._tx_count_last_n_days(7)
+
+    def add_tx_count_last_30d(self):
+        return self._tx_count_last_n_days(30)
 
     # ------------------------------------------------------------------
     # #16 days_since_last_tx_customer
@@ -381,27 +417,6 @@ class FeatureEngineering:
         return self
 
     # ------------------------------------------------------------------
-    # #18 cluster_id / dist_to_centroid
-    # A klaszterezés (KMeans, train-only fit) külön script (clustering.py)
-    # felelőssége -- ez a metódus csak a már kiszámolt eredményt csatolja.
-    # ------------------------------------------------------------------
-
-    def add_cluster_features(self, cluster_id, dist_to_centroid):
-        self.df["cluster_id"] = np.asarray(cluster_id)
-        self.df["dist_to_centroid"] = np.asarray(dist_to_centroid)
-        return self
-
-    # ------------------------------------------------------------------
-    # #19 is_hdbscan_noise
-    # A HDBSCAN futtatása (train-only fit) is külön script felelőssége --
-    # ez a metódus csak a zaj-címkét csatolja.
-    # ------------------------------------------------------------------
-
-    def add_is_hdbscan_noise(self, hdbscan_labels):
-        self.df["is_hdbscan_noise"] = (np.asarray(hdbscan_labels) == -1).astype(int)
-        return self
-
-    # ------------------------------------------------------------------
     # #20 risk_score_composite
     # Egyszerű, súlyozott kombináció a fentebb már előállított jelekből --
     # csak az összetevők megléte után hívható.
@@ -432,32 +447,35 @@ class FeatureEngineering:
     # ------------------------------------------------------------------
 
     def run_all(self):
-        return (
-            self.add_amount_log()
-            .add_is_amount_outlier()
-            .add_customer_amount_stats()
-            .add_amount_zscore_category()
-            .add_amount_ratio_merchant_avg()
-            .add_customer_fraud_prior()
-            .add_customer_days_since_first_tx()
-            .add_customer_category_diversity_hist()
-            .add_is_new_category_for_customer()
-            .add_merchant_fraud_prior()
-            .add_category_fraud_prior()
-            .add_category_is_high_risk()
-            .add_tx_count_last_n_days()
-            .add_days_since_last_tx_customer()
-            .add_cumulative_spend_30d()
-            .add_risk_score_composite()
+        feature_methods = (
+            self.add_amount_log,
+            self.add_is_amount_outlier,
+            self.add_amount_zscore_customer,
+            self.add_amount_ratio_customer,
+            self.add_amount_zscore_category,
+            self.add_amount_ratio_merchant_avg,
+            self.add_customer_fraud_prior,
+            self.add_customer_tx_count_hist,
+            self.add_customer_days_since_first_tx,
+            self.add_customer_category_diversity_hist,
+            self.add_is_new_category_for_customer,
+            self.add_merchant_fraud_prior,
+            self.add_merchant_tx_count_hist,
+            self.add_category_fraud_prior,
+            self.add_category_tx_count_hist,
+            self.add_category_is_high_risk,
+            self.add_tx_count_last_7d,
+            self.add_tx_count_last_30d,
+            self.add_days_since_last_tx_customer,
+            self.add_cumulative_spend_30d,
+            self.add_risk_score_composite,
         )
-
-    def get_dataframe(self):
+        for add_feature in feature_methods:
+            add_feature()
         return self.df
-
 
 if __name__ == "__main__":
     fe = FeatureEngineering(pd.read_csv("../data/processed/dataset_cleaned.csv"))
-    fe.run_all()
-    result_df = fe.get_dataframe()
+    result_df = fe.run_all()
     print(result_df.shape)
     print(result_df.columns.tolist())
