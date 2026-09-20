@@ -3,18 +3,16 @@ from pathlib import Path
 from clustering import Clusterer
 from feature_engineering import FeatureEngineering
 from preprocessor import Preprocessor
+from data_split import DataSplit
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 RAW_DATA_PATH = PROJECT_ROOT / "data" / "raw" / "BankSim.csv"
 CLEANED_DATA_PATH = PROJECT_ROOT / "data" / "processed" / "BankSim_cleaned.csv"
-ENGINEERED_DATA_PATH = PROJECT_ROOT / "data" / "processed" / "dataset_engineered.csv"
-
 
 def run_pipeline(
     input_path=RAW_DATA_PATH,
     cleaned_output_path=CLEANED_DATA_PATH,
-    engineered_output_path=ENGINEERED_DATA_PATH,
 ):
     """Run preprocessing, clustering, and feature engineering in order."""
     preprocessor = Preprocessor(
@@ -31,13 +29,17 @@ def run_pipeline(
 
     feature_engineering = FeatureEngineering(cleaned_df)
     engineered_df = feature_engineering.run_all()
+    data_splitter = DataSplit(engineered_df)
+    customer_train_df, customer_val_df, customer_test_df = data_splitter.customer_split()
+    time_train_df, time_val_df, time_test_df = data_splitter.time_split()
 
-    engineered_output_path = Path(engineered_output_path)
-    engineered_output_path.parent.mkdir(parents=True, exist_ok=True)
-    engineered_df.to_csv(engineered_output_path, index=False)
-    print(f"Feature-engineered adat elmentve ide: {engineered_output_path}")
+    customer_test_path = PROJECT_ROOT / "data" / "processed" / "dataset_customer_split_test.csv"
+    time_test_path = PROJECT_ROOT / "data" / "processed" / "dataset_time_split_test.csv"
+    customer_test_df.to_csv(customer_test_path, index=False)
+    time_test_df.to_csv(time_test_path, index=False)
 
-    return engineered_df
+    print(f"Pipeline futtatva. Tisztított adat elmentve: {cleaned_output_path}")
+    
 
 
 if __name__ == "__main__":

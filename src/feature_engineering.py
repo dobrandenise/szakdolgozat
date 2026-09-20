@@ -1,5 +1,8 @@
 import numpy as np
 import pandas as pd
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 class FeatureEngineering:
     """
@@ -470,12 +473,15 @@ class FeatureEngineering:
             self.add_cumulative_spend_30d,
             self.add_risk_score_composite,
         )
+        print("=== Feature engineering futtatása ===")
         for add_feature in feature_methods:
             add_feature()
+
+        self.df.to_csv(PROJECT_ROOT / "data" / "processed" / "dataset_engineered.csv", index=False)
         return self.df
 
 if __name__ == "__main__":
-    fe = FeatureEngineering(pd.read_csv("../data/processed/dataset_cleaned.csv"))
+    fe = FeatureEngineering(pd.read_csv(PROJECT_ROOT / "data" / "processed" / "dataset_cleaned.csv"))
     result_df = fe.run_all()
     print(result_df.shape)
     print(result_df.columns.tolist())
