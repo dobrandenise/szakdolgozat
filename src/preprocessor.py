@@ -23,20 +23,12 @@ class Preprocessor:
     def __init__(
             self,
             input_path,
-            output_path=None,
             strip_quote_cols= ["customer", "age", "gender", "merchant", "category"],
             constant_cols_to_drop= ["zipcodeOri", "zipMerchant"],
     ):
         self.input_path = input_path
-        self.output_path = output_path or self._default_output_path(input_path)
-
         self.strip_quote_cols = strip_quote_cols
         self.constant_cols_to_drop = constant_cols_to_drop
-
-    @staticmethod
-    def _default_output_path(input_path):
-        base_dir = os.path.dirname(input_path)
-        return os.path.join(base_dir, "dataset_cleaned.csv")
 
     def load_data(self) -> pd.DataFrame:
         return pd.read_csv(self.input_path)
@@ -93,13 +85,6 @@ class Preprocessor:
         df = self.drop_missing_values(df)
         return df
 
-    def save_cleaned(self, df):
-        out_dir = os.path.dirname(self.output_path)
-        if out_dir:
-            os.makedirs(out_dir, exist_ok=True)
-        df.to_csv(self.output_path, index=False)
-        print(f"Tisztított adat elmentve ide: {self.output_path}")
-
     def run(self) -> pd.DataFrame:
         df = self.load_data()
         print("=== Nyers adat alakja ===")
@@ -110,9 +95,9 @@ class Preprocessor:
         print("\n=== Tisztított adat alakja ===")
         print(df.shape)
 
-        self.save_cleaned(df)
         return df
 
 if __name__ == "__main__":
-    preprocessor = Preprocessor(input_path="../data/raw/BankSim.csv", output_path="../data/processed/BankSim_cleaned.csv")
+    preprocessor = Preprocessor(input_path="../data/raw/BankSim.csv")
     cleaned_df = preprocessor.run()
+    preprocessor.save_cleaned(cleaned_df)
