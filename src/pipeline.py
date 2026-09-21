@@ -9,36 +9,42 @@ from data_split import DataSplit
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 RAW_DATA_PATH = PROJECT_ROOT / "data" / "raw" / "BankSim.csv"
 CLEANED_DATA_PATH = PROJECT_ROOT / "data" / "processed" / "BankSim_cleaned.csv"
+FEATURED_DATA_PATH = PROJECT_ROOT / "data" / "processed" / "BankSim_featured.csv"
 
-def run_pipeline(
-    input_path=RAW_DATA_PATH,
-    cleaned_output_path=CLEANED_DATA_PATH,
-):
-    """Run preprocessing, clustering, and feature engineering in order."""
-    preprocessor = Preprocessor(
-        input_path=str(input_path),
-        output_path=str(cleaned_output_path),
-    )
+def run_pipeline(input_path=RAW_DATA_PATH):
+    """Run preprocessing, feature engineering, data splitting and clustering in order."""
+    preprocessor = Preprocessor(input_path=str(input_path))
     cleaned_df = preprocessor.run()
+    cleaned_df.to_csv(CLEANED_DATA_PATH, index=False)
 
-    clustering_df = preprocessor.encode_categorical_columns(cleaned_df.copy())
+    fe = FeatureEngineering(cleaned_df)
+    dataset_wide_df = fe.add_dataset_wide_features()
+
+    data_splitter = DataSplit(dataset_wide_df)
+    customer_train, customer_val, customer_test = data_splitter.customer_split()
+    time_train, time_val, time_test = data_splitter.time_split()
+
+    fe_costumer = FeatureEngineering(dataset_wide_df)
+    customer_train, customer_val, customer_test = fe_costumer.fit_and_add_train_dependent_features(customer_train, data_splitter, split_name="customer")
+
+    fe_time = FeatureEngineering(dataset_wide_df)
+    time_train, time_val, time_test = fe_time.fit_and_add_train_dependent_features(time_train, data_splitter, split_name="time")
     clusterer = Clusterer()
-    clustered_df = clusterer.run(clustering_df)
-    cluster_columns = ["cluster_id", "dist_to_centroid", "is_hdbscan_noise"]
-    cleaned_df[cluster_columns] = clustered_df[cluster_columns]
+    customer_train = preprocessor.encode_categorical_columns(customer_train)
+    time_train = preprocessor.encode_categorical_columns(time_train)
+    customer_train = clusterer.fit_transform(customer_train)
+    time_train = clusterer.fit_transform(time_train)
 
-    feature_engineering = FeatureEngineering(cleaned_df)
-    engineered_df = feature_engineering.run_all()
-    data_splitter = DataSplit(engineered_df)
-    customer_train_df, customer_val_df, customer_test_df = data_splitter.customer_split()
-    time_train_df, time_val_df, time_test_df = data_splitter.time_split()
-
+    customer_train_path = PROJECT_ROOT / "data" / "processed" / "dataset_customer_split_train.csv"
+    time_train_path = PROJECT_ROOT / "data" / "processed" / "dataset_time_split_train.csv"
+    customer_train.to_csv(customer_train_path, index=False)
+    time_train.to_csv(time_train_path, index=False)
     customer_test_path = PROJECT_ROOT / "data" / "processed" / "dataset_customer_split_test.csv"
     time_test_path = PROJECT_ROOT / "data" / "processed" / "dataset_time_split_test.csv"
-    customer_test_df.to_csv(customer_test_path, index=False)
-    time_test_df.to_csv(time_test_path, index=False)
+    customer_test.to_csv(customer_test_path, index=False)
+    time_test.to_csv(time_test_path, index=False)
 
-    print(f"Pipeline futtatva. Tisztított adat elmentve: {cleaned_output_path}")
+    print(f"Pipeline futtatva. Tisztított adat elmentve.")
     
 
 

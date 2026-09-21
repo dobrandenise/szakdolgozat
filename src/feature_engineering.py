@@ -2,6 +2,8 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 
+from data_split import DataSplit
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 class FeatureEngineering:
@@ -32,7 +34,7 @@ class FeatureEngineering:
 
     def __init__(
         self,
-        df,
+        df: pd.DataFrame,
         step_col="step",
         customer_col="customer",
         merchant_col="merchant",
@@ -52,12 +54,8 @@ class FeatureEngineering:
         self.amount_col = amount_col
         self.fraud_col = fraud_col
         self.bayes_m = bayes_m
-
-        self.global_fraud_prior = (
-            global_fraud_prior if global_fraud_prior is not None else self.df[fraud_col].mean()
-        )
-        self.amount_outlier_bounds = amount_outlier_bounds  # (lower, upper) vagy None -> fit ezen a df-en
-
+        self.global_fraud_prior = global_fraud_prior
+        self.amount_outlier_bounds = amount_outlier_bounds  
     # ------------------------------------------------------------------
     # Belső segédfüggvények (kauzális, napi granularitású history-számítás)
     # ------------------------------------------------------------------
@@ -449,39 +447,72 @@ class FeatureEngineering:
     # egyben, a projektterv 4. fejezetének sorrendjében.
     # ------------------------------------------------------------------
 
-    def run_all(self):
+    def add_dataset_wide_features(self) -> pd.DataFrame:
+        """
+        A teljes (train+val+test) adaton, split ELŐTT futtatandó feature-ök.
+        Ezek mind kauzálisak (expanding window, entitásonként), és nem
+        használnak semmilyen populáció-szintű, train-fit statisztikát —
+        ezért időben biztonságosan futtathatók a teljes datasetre.
+        """
         feature_methods = (
             self.add_amount_log,
-            self.add_is_amount_outlier,
             self.add_amount_zscore_customer,
             self.add_amount_ratio_customer,
             self.add_amount_zscore_category,
             self.add_amount_ratio_merchant_avg,
-            self.add_customer_fraud_prior,
             self.add_customer_tx_count_hist,
             self.add_customer_days_since_first_tx,
             self.add_customer_category_diversity_hist,
             self.add_is_new_category_for_customer,
-            self.add_merchant_fraud_prior,
             self.add_merchant_tx_count_hist,
-            self.add_category_fraud_prior,
             self.add_category_tx_count_hist,
             self.add_category_is_high_risk,
             self.add_tx_count_last_7d,
             self.add_tx_count_last_30d,
             self.add_days_since_last_tx_customer,
             self.add_cumulative_spend_30d,
-            self.add_risk_score_composite,
         )
-        print("=== Feature engineering futtatása ===")
+        print("=== Dataset-szintű (split-független) feature engineering ===")
         for add_feature in feature_methods:
             add_feature()
-
-        self.df.to_csv(PROJECT_ROOT / "data" / "processed" / "dataset_engineered.csv", index=False)
         return self.df
+
+    def fit_and_add_train_dependent_features(self, train_df: pd.DataFrame, splitter: DataSplit, split_name: str) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        """
+        A populáció-szintű (nem entitás-history, hanem globális) statisztikákat
+        -- amount IQR-határok, globális fraud-arány a Bayes-simításhoz --
+        KIZÁRÓLAG a train_df-ből számolja, hogy a val/test ne szivároghasson be.
+
+        A fit-elt statisztikákkal utána a rájuk épülő oszlopokat a teljes
+        (self.df, azaz train+val+test) adatra adja hozzá -- a fraud_prior
+        oszlopok maga a history-számítás továbbra is a teljes idősoron,
+        entitásonként kauzális, csak a simítási konstans jön train-ről.
+        """
+        q1, q3 = train_df[self.amount_col].quantile([0.25, 0.75])
+        iqr = q3 - q1
+        self.amount_outlier_bounds = (q1 - 1.5 * iqr, q3 + 1.5 * iqr)
+        self.global_fraud_prior = train_df[self.fraud_col].mean()
+
+        print("=== Train-fit statisztikákra épülő feature engineering ===")
+        feature_methods = (
+            self.add_is_amount_outlier,
+            self.add_customer_fraud_prior,
+            self.add_merchant_fraud_prior,
+            self.add_category_fraud_prior,
+            self.add_risk_score_composite,
+        )
+        for add_feature in feature_methods:
+            add_feature()
+        if split_name == "customer":
+            return splitter.customer_split(self.df)
+        elif split_name == "time":
+            return splitter.time_split(self.df)
+        else:
+            raise ValueError(f"Ismeretlen split_name: {split_name}. Használj 'customer' vagy 'time'.")
 
 if __name__ == "__main__":
     fe = FeatureEngineering(pd.read_csv(PROJECT_ROOT / "data" / "processed" / "dataset_cleaned.csv"))
-    result_df = fe.run_all()
+    result_df = fe.add_dataset_wide_features()
+    result2_df = fe.fit_and_add_train_dependent_features(result_df[result_df["step"] < 100])
     print(result_df.shape)
     print(result_df.columns.tolist())

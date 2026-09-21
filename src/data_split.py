@@ -29,7 +29,7 @@ class DataSplit:
         if abs(total - 1.0) > 1e-9:
             raise ValueError(f"A train/val/test arányoknak 1.0-ra kell összegződniük, jelenleg: {total}")
 
-    def customer_split(self) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    def customer_split(self, df: pd.DataFrame | None = None) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """
         Customerenkénti 60/20/20 split: a customer-ek véletlenszerűen
         (self.random_state alapján, reprodukálhatóan) kerülnek train/val/test
@@ -39,7 +39,7 @@ class DataSplit:
 
         print("=== Customer split futtatása ===")
 
-        df = self.df
+        df = self.df if df is None else df
 
         customers = (df["customer"].drop_duplicates().sample(frac=1.0, random_state=self.random_state).reset_index(drop=True))
 
@@ -66,7 +66,7 @@ class DataSplit:
 
         return train_df, val_df, test_df
 
-    def time_split(self) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    def time_split(self, df: pd.DataFrame | None = None) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """
         Tisztán step szerinti (idősoros) 60/20/20 split: a teljes adatot
         step szerint növekvő sorrendbe rendezi, majd sorrendben vágja
@@ -74,7 +74,7 @@ class DataSplit:
         """
         print("=== Time split futtatása ===")
 
-        df = self.df.sort_values("step").reset_index(drop=True)
+        df = (self.df if df is None else df).sort_values("step").reset_index(drop=True)
 
         n = len(df)
         n_train = int(n * self.train_ratio)
