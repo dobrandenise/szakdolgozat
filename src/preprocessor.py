@@ -39,22 +39,6 @@ class Preprocessor:
                 df[col] = df[col].astype(str).str.strip("'")
         return df
 
-    def encode_categorical_columns(self, df):
-        categorical_cols = ["age", "gender", "category", "merchant", "customer"]
-        missing_cols = [col for col in categorical_cols if col not in df.columns]
-        if missing_cols:
-            raise ValueError(f"Hiányzó kategorikus oszlop(ok): {missing_cols}")
-
-        encoder = OrdinalEncoder(
-            handle_unknown="use_encoded_value",
-            unknown_value=-1,
-        )
-        encoded_df = df.copy()
-        encoded_df[categorical_cols] = encoder.fit_transform(
-            encoded_df[categorical_cols]
-        )
-        return encoded_df
-
     def drop_constant_columns(self, df):
         cols_present = [c for c in self.constant_cols_to_drop if c in df.columns]
         if cols_present:
