@@ -23,11 +23,6 @@ class Clusterer:
     FEATURE_COLUMNS = [
     "step",
     "amount_log",
-    "age",
-    "gender",
-    "customer",
-    "merchant",
-    "category",
     "amount_zscore_customer",
     "amount_ratio_customer",
     "amount_zscore_category",
@@ -47,10 +42,12 @@ class Clusterer:
 
     def __init__(self, 
                 kmeans_params={"n_clusters": 9, "random_state": 42, "n_init": 10}, 
-                hdbscan_params={"min_cluster_size": 100, "min_samples": 20}
+                hdbscan_params={"min_cluster_size": 100, "min_samples": 20},
+                feature_columns=None
         ):
         self.kmeans_params = kmeans_params 
         self.hdbscan_params = hdbscan_params
+        self.feature_columns = list(feature_columns) if feature_columns is not None else list(self.FEATURE_COLUMNS)
 
         self.scaler = StandardScaler()
         self.kmeans_model = KMeans(**self.kmeans_params)
@@ -59,11 +56,11 @@ class Clusterer:
         self._is_fitted = False
 
     def _build_raw_matrix(self, df: pd.DataFrame) -> cp.ndarray:
-        missing = [c for c in self.FEATURE_COLUMNS if c not in df.columns]
+        missing = [c for c in self.feature_columns if c not in df.columns]
         if missing:
             raise ValueError(f"Hiányzó klaszterezési oszlop(ok): {missing}")
 
-        return cp.asarray(df[self.FEATURE_COLUMNS].to_numpy(dtype=np.float32))
+        return cp.asarray(df[self.feature_columns].to_numpy(dtype=np.float32))
 
     def fit(self, train_df: pd.DataFrame) -> "Clusterer":
         """Fit scaler, KMeans and HDBSCAN kizárólag a train adaton."""
@@ -101,6 +98,7 @@ class Clusterer:
         out_df = df.copy()
         out_df["cluster_id"] = cp.asnumpy(cluster_id).astype(np.int16)
         out_df["dist_to_centroid"] = cp.asnumpy(dist_to_centroid)
+        out_df["hdbscan_cluster_id"] = cp.asnumpy(hdbscan_labels).astype(np.int32)
         out_df["is_hdbscan_noise"] = is_noise.astype(np.int8)
         return out_df
 

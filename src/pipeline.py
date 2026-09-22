@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from clustering import Clusterer
+#from clustering import Clusterer
 from feature_engineering import FeatureEngineering
 from preprocessor import Preprocessor
 from data_split import DataSplit
@@ -24,14 +24,17 @@ def run_pipeline(input_path=RAW_DATA_PATH):
     customer_train, customer_val, customer_test = data_splitter.customer_split()
     time_train, time_val, time_test = data_splitter.time_split()
 
-    fe_costumer = FeatureEngineering(dataset_wide_df)
-    customer_train, customer_val, customer_test = fe_costumer.fit_and_add_train_dependent_features(customer_train, data_splitter, split_name="customer")
+    fe_wide = FeatureEngineering(dataset_wide_df)
+    customer_train, customer_val, customer_test = fe_wide.fit_and_add_train_dependent_features(customer_train, data_splitter, split_name="customer")
+    time_train, time_val, time_test = fe_wide.fit_and_add_train_dependent_features(time_train, data_splitter, split_name="time")
 
-    fe_time = FeatureEngineering(dataset_wide_df)
-    time_train, time_val, time_test = fe_time.fit_and_add_train_dependent_features(time_train, data_splitter, split_name="time")
+    customer_train_path = PROJECT_ROOT / "data" / "optimalization" / "customer_train.csv"
+    time_train_path = PROJECT_ROOT / "data" / "optimalization" / "time_train.csv"
+    customer_train.to_csv(customer_train_path, index=False)
+    time_train.to_csv(time_train_path, index=False)
+
+"""
     clusterer = Clusterer()
-    customer_train = preprocessor.encode_categorical_columns(customer_train)
-    time_train = preprocessor.encode_categorical_columns(time_train)
     customer_train = clusterer.fit_transform(customer_train)
     time_train = clusterer.fit_transform(time_train)
 
@@ -45,8 +48,7 @@ def run_pipeline(input_path=RAW_DATA_PATH):
     time_test.to_csv(time_test_path, index=False)
 
     print(f"Pipeline futtatva. Tisztított adat elmentve.")
-    
-
+"""
 
 if __name__ == "__main__":
     run_pipeline()
