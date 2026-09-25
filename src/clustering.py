@@ -20,34 +20,35 @@ class Clusterer:
         train_out = clusterer.fit_transform(train_df)
     """
 
-    FEATURE_COLUMNS = [
-    "step",
-    "amount_log",
-    "amount_zscore_customer",
-    "amount_ratio_customer",
-    "amount_zscore_category",
-    "amount_ratio_merchant_avg",
-    "customer_tx_count_hist",
-    "customer_days_since_first_tx",
-    "customer_category_diversity_hist",
-    "is_new_category_for_customer",
-    "merchant_tx_count_hist",
-    "category_tx_count_hist",
-    "category_is_high_risk",
-    "tx_count_last_7d",
-    "tx_count_last_30d",
-    "days_since_last_tx_customer",
-    "cumulative_spend_30d",
-]
+    HIGH_SIGNAL_NUMERICAL_FEATURES = [
+        "step",
+        "amount_log",
+        "amount_zscore_customer",
+        "amount_ratio_customer",
+        "amount_zscore_category",
+        "amount_ratio_merchant_avg",
+        "customer_tx_count_hist",
+        "customer_days_since_first_tx",
+        "customer_category_diversity_hist",
+        "is_new_category_for_customer",
+        "merchant_tx_count_hist",
+        "category_tx_count_hist",
+        "category_is_high_risk",
+        "tx_count_last_7d",
+        "tx_count_last_30d",
+        "days_since_last_tx_customer",
+        "cumulative_spend_30d",
+        "is_amount_outlier",
+    ]
 
     def __init__(self, 
-                kmeans_params={"n_clusters": 9, "random_state": 42, "n_init": 10}, 
-                hdbscan_params={"min_cluster_size": 100, "min_samples": 20},
+                kmeans_params={"n_clusters": 3, "random_state": 42, "n_init": 10}, 
+                hdbscan_params={"min_cluster_size": 400, "min_samples": 30},
                 feature_columns=None
         ):
         self.kmeans_params = kmeans_params 
         self.hdbscan_params = hdbscan_params
-        self.feature_columns = list(feature_columns) if feature_columns is not None else list(self.FEATURE_COLUMNS)
+        self.feature_columns = list(feature_columns) if feature_columns is not None else list(self.HIGH_SIGNAL_NUMERICAL_FEATURES)
 
         self.scaler = StandardScaler()
         self.kmeans_model = KMeans(**self.kmeans_params)
@@ -102,6 +103,7 @@ class Clusterer:
         out_df["is_hdbscan_noise"] = is_noise.astype(np.int8)
         return out_df
 
-    def fit_transform(self, train_df: pd.DataFrame) -> pd.DataFrame:
+    def fit_transform(self, train_df: pd.DataFrame, df: pd.DataFrame) -> pd.DataFrame:
+        """Fit a model on train_df and transform df in one step."""
         self.fit(train_df)
-        return self.transform(train_df)
+        return self.transform(df)
