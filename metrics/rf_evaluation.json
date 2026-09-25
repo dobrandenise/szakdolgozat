@@ -1,0 +1,45 @@
+{
+  "model_name": "RandomForestModel",
+  "timestamp": "2026-09-24T10:22:44Z",
+  "model_params": {
+    "bootstrap": true,
+    "ccp_alpha": 0.0,
+    "class_weight": null,
+    "criterion": "gini",
+    "max_depth": 16,
+    "max_features": 0.45115101356959497,
+    "max_leaf_nodes": null,
+    "max_samples": null,
+    "min_impurity_decrease": 0.0,
+    "min_samples_leaf": 7,
+    "min_samples_split": 2,
+    "min_weight_fraction_leaf": 0.0,
+    "monotonic_cst": null,
+    "n_estimators": 727,
+    "n_jobs": null,
+    "oob_score": false,
+    "random_state": null,
+    "verbose": 0,
+    "warm_start": false
+  },
+  "best_params": {
+    "n_estimators": 727,
+    "max_depth": 16,
+    "max_features": 0.45115101356959497,
+    "min_samples_leaf": 7,
+    "class_weight": null
+  },
+  "n_test_samples": 119198,
+  "fraud_rate": 0.011300525176596923,
+  "AUC-ROC": 0.9987251779811781,
+  "AUC-PR": 0.941694906555487,
+  "precision_fraud": 0.9153225806451613,
+  "recall_fraud": 0.8426132145508537,
+  "f1_fraud": 0.8774642442984152,
+  "confusion_matrix": {
+    "tn": 117746,
+    "fp": 105,
+    "fn": 212,
+    "tp": 1135
+  }
+}

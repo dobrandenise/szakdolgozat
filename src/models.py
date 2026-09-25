@@ -36,12 +36,23 @@ FÜGGŐSÉGEK:
 """
  
 from __future__ import annotations
- 
+
+import json
+from datetime import datetime
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.ensemble import HistGradientBoostingClassifier
-from sklearn.metrics import average_precision_score
+from sklearn.metrics import (
+    average_precision_score,
+    confusion_matrix,
+    f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
  
  
 # ---------------------------------------------------------------------------
@@ -60,7 +71,7 @@ class RandomForestModel:
         self.model: RandomForestClassifier | None = None
         self.best_params: dict | None = None
  
-    def tune(self, X_train, y_train, X_val, y_val, n_trials: int = 50) -> dict:
+    def tune(self, X_train, y_train, X_val, y_val, n_trials: int = 100) -> dict:
         import optuna
  
         def objective(trial: "optuna.Trial") -> float:
@@ -101,6 +112,43 @@ class RandomForestModel:
         if self.model is None:
             raise RuntimeError("A modellt előbb fit()-elni kell.")
         return self.model.predict_proba(X)[:, 1]
+
+    def evaluate(self, X_test, y_test, save_path: str | Path | None = None, model_name: str = "RandomForestModel") -> dict:
+        """Futási metrikák és a modell paraméterei mentése JSON fájlba."""
+        if self.model is None:
+            raise RuntimeError("A modellt előbb fit()-elni kell.")
+
+        y_proba = self.predict_proba(X_test)
+        y_pred = self.model.predict(X_test)
+
+        tn, fp, fn, tp = confusion_matrix(y_test, y_pred).ravel()
+        metrics = {
+            "model_name": model_name,
+            "timestamp": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+            "model_params": self.model.get_params(),
+            "best_params": self.best_params,
+            "n_test_samples": int(len(y_test)),
+            "fraud_rate": float(y_test.mean()) if len(y_test) else 0.0,
+            "AUC-ROC": float(roc_auc_score(y_test, y_proba)),
+            "AUC-PR": float(average_precision_score(y_test, y_proba)),
+            "precision_fraud": float(precision_score(y_test, y_pred, zero_division=0)),
+            "recall_fraud": float(recall_score(y_test, y_pred, zero_division=0)),
+            "f1_fraud": float(f1_score(y_test, y_pred, zero_division=0)),
+            "confusion_matrix": {
+                "tn": int(tn),
+                "fp": int(fp),
+                "fn": int(fn),
+                "tp": int(tp),
+            },
+        }
+
+        if save_path is not None:
+            path = Path(save_path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("w", encoding="utf-8") as f:
+                json.dump(metrics, f, indent=2, ensure_ascii=False)
+
+        return metrics
 
 # ---------------------------------------------------------------------------
 # 2. HistGradientBoosting
