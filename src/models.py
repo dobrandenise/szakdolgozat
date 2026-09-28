@@ -1,10 +1,9 @@
 """
-Négy modellcsalád implementációja a fraud detection szakdolgozathoz:
+Három modellcsalád implementációja a fraud detection szakdolgozathoz:
  
   1. RandomForestModel  - tabuláris, kézzel épített feature-ökön
   2. HistGBModel         - tabuláris, kézzel épített feature-ökön
-  3. TransformerModel    - per-customer tranzakció-szekvencia, causal attention
-  4. GraphSAGEModel      - customer-merchant bipartit gráf, induktív node-kezeléssel
+  3. GraphSAGEModel      - customer-merchant bipartit gráf, induktív node-kezeléssel
  
 Feltételezett bemenet (illeszkedik a meglévő BaselineFraudExperiment / DataSplit
 kimenetéhez):
@@ -14,13 +13,13 @@ kimenetéhez):
         DataFrame-ek és y_train / y_val / y_test Series-ek, ugyanúgy, ahogy az
         encode_features(train_features, test_features) előállítja őket.
  
-  - TransformerModel / GraphSAGEModel:
+  - GraphSAGEModel:
         a nyers (de tisztított) tranzakciós train/val/test DataFrame-ek, az
         alábbi oszlopokkal: customer, merchant, category, amount, step, fraud
         (+ opcionálisan a 4. fejezetben épített history/ratio/prior/cluster
         feature-ök numerikus oszlopokként).
  
-Mind a négy osztály egységes felületet ad:
+Mind a három osztály egységes felületet ad:
  
     model.fit(...)
     model.predict_proba(...)  -> 1D numpy array a fraud-valószínűségekkel
@@ -205,259 +204,7 @@ class HistGBModel:
         return self.model.predict_proba(X)[:, 1]
 
 # ---------------------------------------------------------------------------
-# 3. Transformer (per-customer szekvencia, causal attention)
-# ---------------------------------------------------------------------------
- 
-class _TransactionSequenceDataset:
-    """
-    Customerenként, step szerint rendezett tranzakció-szekvenciákat épít.
-    Numerikus feature-ök összefűzve, a category/merchant embeddingként kerül
-    be a modellbe. Fix max_len-re paddol/vág (padding maszkkal).
-    """
- 
-    def __init__(self, df: pd.DataFrame, numeric_cols, category_col, merchant_col,
-                 target_col, max_len: int, category_vocab=None, merchant_vocab=None):
-        import torch
- 
-        self.max_len = max_len
-        self.numeric_cols = list(numeric_cols)
- 
-        self.category_vocab = category_vocab or {
-            v: i + 1 for i, v in enumerate(sorted(df[category_col].unique()))
-        }
-        self.merchant_vocab = merchant_vocab or {
-            v: i + 1 for i, v in enumerate(sorted(df[merchant_col].unique()))
-        }
- 
-        sequences = []
-        for _, group in df.sort_values("step").groupby(df["customer"] if "customer" in df else df.index):
-            group = group.sort_values("step")
-            numeric = group[self.numeric_cols].to_numpy(dtype=np.float32)
-            cats = group[category_col].map(self.category_vocab).fillna(0).to_numpy(dtype=np.int64)
-            merch = group[merchant_col].map(self.merchant_vocab).fillna(0).to_numpy(dtype=np.int64)
-            labels = group[target_col].to_numpy(dtype=np.float32)
-            sequences.append((numeric, cats, merch, labels))
- 
-        self.sequences = sequences
- 
-    def __len__(self):
-        return len(self.sequences)
- 
-    def __getitem__(self, idx):
-        import torch
- 
-        numeric, cats, merch, labels = self.sequences[idx]
-        seq_len = min(len(labels), self.max_len)
- 
-        num_pad = np.zeros((self.max_len, len(self.numeric_cols)), dtype=np.float32)
-        cat_pad = np.zeros(self.max_len, dtype=np.int64)
-        merch_pad = np.zeros(self.max_len, dtype=np.int64)
-        label_pad = np.zeros(self.max_len, dtype=np.float32)
-        attn_mask = np.zeros(self.max_len, dtype=np.bool_)
- 
-        # csak az utolsó max_len tranzakciót tartjuk meg (legfrissebb kontextus)
-        num_pad[:seq_len] = numeric[-seq_len:]
-        cat_pad[:seq_len] = cats[-seq_len:]
-        merch_pad[:seq_len] = merch[-seq_len:]
-        label_pad[:seq_len] = labels[-seq_len:]
-        attn_mask[:seq_len] = True
- 
-        return (
-            torch.from_numpy(num_pad),
-            torch.from_numpy(cat_pad),
-            torch.from_numpy(merch_pad),
-            torch.from_numpy(label_pad),
-            torch.from_numpy(attn_mask),
-        )
- 
- 
-class _TransformerNet:
-    """nn.Module wrapper, csak import-on belül definiálva, hogy torch nélkül is betölthető legyen a fájl."""
- 
-    @staticmethod
-    def build(num_numeric: int, num_categories: int, num_merchants: int,
-              d_model: int = 64, n_heads: int = 4, n_layers: int = 2, dropout: float = 0.2):
-        import torch
-        import torch.nn as nn
- 
-        class TransformerNet(nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.category_emb = nn.Embedding(num_categories + 1, 8, padding_idx=0)
-                self.merchant_emb = nn.Embedding(num_merchants + 1, 16, padding_idx=0)
-                self.input_proj = nn.Linear(num_numeric + 8 + 16, d_model)
-                encoder_layer = nn.TransformerEncoderLayer(
-                    d_model=d_model, nhead=n_heads, dim_feedforward=d_model * 4,
-                    dropout=dropout, batch_first=True,
-                )
-                self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=n_layers)
-                self.head = nn.Sequential(
-                    nn.Linear(d_model, d_model // 2), nn.ReLU(), nn.Dropout(dropout),
-                    nn.Linear(d_model // 2, 1),
-                )
- 
-            def forward(self, numeric, cats, merch, attn_mask):
-                cat_e = self.category_emb(cats)
-                merch_e = self.merchant_emb(merch)
-                x = torch.cat([numeric, cat_e, merch_e], dim=-1)
-                x = self.input_proj(x)
- 
-                seq_len = x.size(1)
-                causal_mask = torch.triu(
-                    torch.ones(seq_len, seq_len, device=x.device, dtype=torch.bool), diagonal=1
-                )
-                key_padding_mask = ~attn_mask
- 
-                out = self.encoder(x, mask=causal_mask, src_key_padding_mask=key_padding_mask)
-                logits = self.head(out).squeeze(-1)
-                return logits
- 
-        return TransformerNet()
- 
- 
-class TransformerModel:
-    """
-    Per-customer tranzakció-szekvencia Transformer, causal maszkkal (csak a
-    korábbi tranzakciókra figyelhet minden lépés — nincs jövőbeli leakage).
-    Focal loss-t használ az extrém imbalance miatt (γ=2.0, α≈0.90-0.95,
-    ahogy a 6. fejezetben rögzítettük).
-    """
- 
-    def __init__(self, numeric_cols, category_col="category", merchant_col="merchant",
-                 target_col="fraud", max_len: int = 64, d_model: int = 64,
-                 n_heads: int = 4, n_layers: int = 2, dropout: float = 0.2,
-                 lr: float = 1e-3, focal_gamma: float = 2.0, focal_alpha: float = 0.9,
-                 device: str | None = None):
-        self.numeric_cols = numeric_cols
-        self.category_col = category_col
-        self.merchant_col = merchant_col
-        self.target_col = target_col
-        self.max_len = max_len
-        self.d_model = d_model
-        self.n_heads = n_heads
-        self.n_layers = n_layers
-        self.dropout = dropout
-        self.lr = lr
-        self.focal_gamma = focal_gamma
-        self.focal_alpha = focal_alpha
- 
-        import torch
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self.net = None
-        self.category_vocab = None
-        self.merchant_vocab = None
- 
-    @staticmethod
-    def _focal_loss(logits, targets, mask, gamma, alpha):
-        import torch
-        import torch.nn.functional as F
- 
-        probs = torch.sigmoid(logits)
-        pt = torch.where(targets == 1, probs, 1 - probs)
-        alpha_t = torch.where(targets == 1, alpha, 1 - alpha)
-        bce = F.binary_cross_entropy_with_logits(logits, targets, reduction="none")
-        loss = alpha_t * (1 - pt) ** gamma * bce
-        loss = loss * mask
-        return loss.sum() / mask.sum().clamp(min=1)
- 
-    def fit(self, train_df: pd.DataFrame, val_df: pd.DataFrame,
-            epochs: int = 100, batch_size: int = 64, patience: int = 8) -> "TransformerModel":
-        import torch
-        from torch.utils.data import DataLoader
- 
-        train_ds = _TransactionSequenceDataset(
-            train_df, self.numeric_cols, self.category_col, self.merchant_col,
-            self.target_col, self.max_len,
-        )
-        self.category_vocab = train_ds.category_vocab
-        self.merchant_vocab = train_ds.merchant_vocab
- 
-        val_ds = _TransactionSequenceDataset(
-            val_df, self.numeric_cols, self.category_col, self.merchant_col,
-            self.target_col, self.max_len,
-            category_vocab=self.category_vocab, merchant_vocab=self.merchant_vocab,
-        )
- 
-        train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
-        val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
- 
-        self.net = _TransformerNet.build(
-            num_numeric=len(self.numeric_cols),
-            num_categories=len(self.category_vocab),
-            num_merchants=len(self.merchant_vocab),
-            d_model=self.d_model, n_heads=self.n_heads,
-            n_layers=self.n_layers, dropout=self.dropout,
-        ).to(self.device)
- 
-        optimizer = torch.optim.AdamW(self.net.parameters(), lr=self.lr, weight_decay=1e-4)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=4)
- 
-        best_val_pr_auc = -1.0
-        best_state = None
-        epochs_no_improve = 0
- 
-        for epoch in range(epochs):
-            self.net.train()
-            for numeric, cats, merch, labels, mask in train_loader:
-                numeric, cats, merch = numeric.to(self.device), cats.to(self.device), merch.to(self.device)
-                labels, mask = labels.to(self.device), mask.to(self.device).float()
- 
-                optimizer.zero_grad()
-                logits = self.net(numeric, cats, merch, mask.bool())
-                loss = self._focal_loss(logits, labels, mask, self.focal_gamma, self.focal_alpha)
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.net.parameters(), max_norm=1.0)
-                optimizer.step()
- 
-            val_probs, val_labels = self._predict_masked(val_loader)
-            val_pr_auc = average_precision_score(val_labels, val_probs)
-            scheduler.step(val_pr_auc)
- 
-            if val_pr_auc > best_val_pr_auc:
-                best_val_pr_auc = val_pr_auc
-                best_state = {k: v.clone() for k, v in self.net.state_dict().items()}
-                epochs_no_improve = 0
-            else:
-                epochs_no_improve += 1
-                if epochs_no_improve >= patience:
-                    break
- 
-        if best_state is not None:
-            self.net.load_state_dict(best_state)
-        return self
- 
-    def _predict_masked(self, loader):
-        import torch
- 
-        self.net.eval()
-        all_probs, all_labels = [], []
-        with torch.no_grad():
-            for numeric, cats, merch, labels, mask in loader:
-                numeric, cats, merch = numeric.to(self.device), cats.to(self.device), merch.to(self.device)
-                mask_bool = mask.to(self.device).bool()
-                logits = self.net(numeric, cats, merch, mask_bool)
-                probs = torch.sigmoid(logits)
-                all_probs.append(probs[mask_bool].cpu().numpy())
-                all_labels.append(labels[mask].numpy())
-        return np.concatenate(all_probs), np.concatenate(all_labels)
- 
-    def predict_proba(self, df: pd.DataFrame, batch_size: int = 64) -> np.ndarray:
-        from torch.utils.data import DataLoader
- 
-        if self.net is None:
-            raise RuntimeError("A modellt előbb fit()-elni kell.")
- 
-        ds = _TransactionSequenceDataset(
-            df, self.numeric_cols, self.category_col, self.merchant_col,
-            self.target_col, self.max_len,
-            category_vocab=self.category_vocab, merchant_vocab=self.merchant_vocab,
-        )
-        loader = DataLoader(ds, batch_size=batch_size, shuffle=False)
-        probs, _ = self._predict_masked(loader)
-        return probs
-
-# ---------------------------------------------------------------------------
-# 4. GraphSAGE (customer-merchant bipartit gráf)
+# 3. GraphSAGE (customer-merchant bipartit gráf)
 # ---------------------------------------------------------------------------
  
 class GraphSAGEModel:
