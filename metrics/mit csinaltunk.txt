@@ -1,0 +1,81 @@
+Mit csináltunk a héten:
+- Preprocessing.py:
+A raw datasetet kapja meg, kiszedi az idézőjeleket (tisztítja az adatot)
+- Feature_engineering.py:
+Az add_dataset_wide_features hozzáadja a cleaned_data-hoz azokat a feature-öket, amit az egész adaton lehet számolni
+A fit_and_add_train_dependent_features megkapja a train_data-t, ezek kiszámolja az outlier_bundokat, a global_fraud_priort és ezekkel a kiszámolt értékekkel 
+számolva adja hozzá az egész data_sethez azokat a feature-öket, ahol ilyen fraud_prior értékek vannak
+Az összes feature ami a plan táblázatba van implementálva lett.
+- Data_split.py:
+Két split logika, mindkettő 60/20/20-as arányban választ szét: 
+- egyszer groupby customerek szerint és utána rendezés step szerint
+- rendezés step szerint és split train/val/test adatra
+- Clustering.py:
+Kmeans és HDBSCAN futtatás kiválasztott feature settre a megfelelő paraméterekkel:
+4 oszlopot adnak hozzá az egész datasethez: cluster_id, dist_to_centroid, hdbscan_clusterid, is_hdbscan_noise
+- high_signal_numerical:
+k=3, min_cluster_size=400, min_samples=30
+
+HIGH_SIGNAL_NUMERICAL_FEATURES = [
+"step",
+"amount_log",
+"amount_zscore_customer",
+"amount_ratio_customer",
+"amount_zscore_category",
+"amount_ratio_merchant_avg",
+"customer_tx_count_hist",
+"customer_days_since_first_tx",
+"customer_category_diversity_hist",
+"is_new_category_for_customer",
+"merchant_tx_count_hist",
+"category_tx_count_hist",
+"category_is_high_risk",
+"tx_count_last_7d",
+"tx_count_last_30d",
+"days_since_last_tx_customer",
+"cumulative_spend_30d",
+"is_amount_outlier",
+]
+
+
+A HDBSCAN eredményei erős kockázati szeparációt mutatnak:
+• HDBSCAN 0. klaszter: 613 rekord, 46.8% fraud rate
+• Noise: 608 rekord, 37.0% fraud rate
+• 1. klaszter: 825 rekord, 5.33% fraud rate
+• 2. klaszter: 586 rekord, 8.36% fraud rate
+• nagy normál klaszter: 44 889 rekord, 0.047% fraud rate
+• HDBSCAN silhouette: 0.368
+A minta teljes fraud aránya körülbelül 1.30%, tehát:
+• a 0. klaszter kb. 36-szoros fraud-liftet ad;
+• a noise pontok kb. 28-szoros fraud-liftet adnak;
+• a 0. klaszter és a noise együtt a rekordok csak kb. 2.44%-át tartalmazza, de a fraudok körülbelül 79%-át lefedi.
+Ez fraud-szűréshez nagyon erős eredmény.
+
+
+A KMeans értékeit viszont óvatosabban értelmezd:
+• silhouette: 0.6836, ami jó;
+• a legnagyobb klaszter mérete 49 731 / 50 000, tehát a KMeans klaszterezés nagyon kiegyensúlyozatlan;
+• ezért a magas silhouette nem feltétlenül jelent három hasonlóan hasznos üzleti/fraud-csoportot.
+Ez a KMeans-eredmény fraud-detektálási szempontból kifejezetten erős, de nagyon kiegyensúlyozatlan klasztereket hozott létre.
+
+Klaszter Méret Fraud Fraud rate
+0 247 175 70.85%
+1 22 13 59.09%
+2 49 731 460 0.925%
+A minta összesen 648 fraud rekordot tartalmaz, vagyis az alap fraud rate körülbelül 1.30%.
+
+A 0. és 1. klasztert magas kockázatú csoportként összevonva:
+
+• 269 rekordot jelöl ki;
+• ebből 188 fraud;
+• precision: kb. 69.9%;
+• a fraudok kb. 29.0%-át fedi le;
+• a baseline-hoz képesti lift körülbelül 54-szeres.
+
+
+- Pipeline.py:
+Beolvassa a raw datasetet, preprocess -> feature_engineering(global oszlopok) -> data-split -> feature_engineering(fraud_specifikus oszlopok) -> 
+-> Clustering -> Model tanítás és kiértékelés
+- Models.py:
+A négy model: RandomForest, HistGradientBoost, Transformer (TNN), Gráf(GNN)
+ 
