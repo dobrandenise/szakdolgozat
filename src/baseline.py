@@ -64,7 +64,7 @@ class BaselineFraudExperiment:
         # vagy early stoppinghoz tartjuk fenn.
         self.print_dataset_summary(train_df)
 
-        # >>> MÓDOSÍTVA: külön train/test feature-tábla, majd fit csak a train-en
+        #külön train/test feature-tábla, majd fit csak a train-en
         train_features, y_train, _ = self.prepare_target_and_features(train_df)
         test_features, y_test, _ = self.prepare_target_and_features(test_df)
         x_train, x_test = self.encode_features(train_features, test_features)
