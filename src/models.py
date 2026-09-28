@@ -1,14 +1,14 @@
 """
 Három modellcsalád implementációja a fraud detection szakdolgozathoz:
  
-  1. RandomForestModel  - tabuláris, kézzel épített feature-ökön
-  2. HistGBModel         - tabuláris, kézzel épített feature-ökön
-  3. GraphSAGEModel      - customer-merchant bipartit gráf, induktív node-kezeléssel
+    1. RandomForestModel  - cuML CUDA Random Forest
+    2. XGBoostModel        - CUDA histogram gradient boosting
+    3. GraphSAGEModel      - customer-merchant bipartit gráf, induktív node-kezeléssel
  
 Feltételezett bemenet (illeszkedik a meglévő BaselineFraudExperiment / DataSplit
 kimenetéhez):
  
-  - RandomForestModel / HistGBModel:
+    - RandomForestModel / XGBoostModel:
         már kódolt (OrdinalEncoder-rel fit-elt) X_train / X_val / X_test
         DataFrame-ek és y_train / y_val / y_test Series-ek, ugyanúgy, ahogy az
         encode_features(train_features, test_features) előállítja őket.
@@ -29,9 +29,8 @@ logikába (PR-AUC, threshold-optimalizáció stb.), a 7-8. fejezetben rögzítet
 protokoll szerint (time-based split, fit kizárólag a train szakaszon).
  
 FÜGGŐSÉGEK:
-    pip install scikit-learn optuna torch torch-geometric
-    (az Optuna és a torch-geometric csak akkor kell, ha a tune()/GraphSAGE
-    metódusokat ténylegesen használod)
+    RAPIDS cuML, CuPy, cuDF, XGBoost, Optuna, PyTorch, TorchMetrics,
+    PyTorch Geometric.
 """
  
 from __future__ import annotations
@@ -42,32 +41,98 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.ensemble import HistGradientBoostingClassifier
-from sklearn.metrics import (
-    average_precision_score,
-    confusion_matrix,
-    f1_score,
-    precision_score,
-    recall_score,
-    roc_auc_score,
-)
+import cupy as cp
+import cudf
+from cuml.ensemble import RandomForestClassifier as CuMLRandomForestClassifier
+from cuml.metrics import roc_auc_score
+from xgboost import XGBClassifier
  
  
 # ---------------------------------------------------------------------------
-# 1. Random Forest
+# GPU helpers and metrics
+# ---------------------------------------------------------------------------
+
+def _to_gpu_features(X) -> cudf.DataFrame | cp.ndarray:
+    if isinstance(X, cudf.DataFrame):
+        return X
+    if isinstance(X, pd.DataFrame):
+        return cudf.from_pandas(X)
+    return cp.asarray(X)
+
+
+def _to_gpu_labels(y) -> cudf.Series | cp.ndarray:
+    if isinstance(y, cudf.Series):
+        return y.astype("int32")
+    if isinstance(y, pd.Series):
+        return cudf.from_pandas(y.astype("int32"))
+    return cp.asarray(y, dtype=cp.int32)
+
+
+def _to_cupy(values) -> cp.ndarray:
+    if isinstance(values, cudf.DataFrame):
+        return values.to_cupy()
+    if isinstance(values, cudf.Series):
+        return values.to_cupy()
+    if isinstance(values, (pd.Series, pd.DataFrame)):
+        return cp.asarray(values.to_numpy())
+    return cp.asarray(values)
+
+
+def _average_precision_score(y_true, y_score) -> float:
+    labels = _to_cupy(y_true).ravel().astype(cp.int32)
+    scores = _to_cupy(y_score).ravel()
+    order = cp.argsort(-scores, kind="stable")
+    sorted_scores = scores[order]
+    sorted_labels = labels[order]
+
+    # Evaluate only at the end of each tied-score group, matching average precision.
+    group_ends = cp.r_[sorted_scores[1:] != sorted_scores[:-1], True]
+    true_positives = cp.cumsum(sorted_labels)[group_ends]
+    total_positives = cp.sum(labels)
+    positive_increments = cp.diff(cp.r_[cp.array([0], dtype=true_positives.dtype), true_positives])
+    ranks = cp.arange(1, len(sorted_labels) + 1)[group_ends]
+    precision = true_positives / ranks
+    return float((cp.sum(precision * positive_increments) / total_positives).item())
+
+
+def classification_metrics(y_true, y_score, threshold: float = 0.5) -> dict:
+    labels = _to_cupy(y_true).ravel().astype(cp.int32)
+    scores = _to_cupy(y_score).ravel()
+    predictions = (scores >= threshold).astype(cp.int32)
+
+    tn = cp.sum((labels == 0) & (predictions == 0))
+    fp = cp.sum((labels == 0) & (predictions == 1))
+    fn = cp.sum((labels == 1) & (predictions == 0))
+    tp = cp.sum((labels == 1) & (predictions == 1))
+    accuracy = (tn + tp) / cp.maximum(tn + fp + fn + tp, 1)
+    precision = tp / cp.maximum(tp + fp, 1)
+    recall = tp / cp.maximum(tp + fn, 1)
+    f1 = 2 * precision * recall / cp.maximum(precision + recall, 1e-12)
+    matrix = cp.stack((cp.stack((tn, fp)), cp.stack((fn, tp))))
+
+    return {
+        "AUC-ROC": float(roc_auc_score(labels, scores)),
+        "AUC-PR": _average_precision_score(labels, scores),
+        "accuracy": float(accuracy.item()),
+        "precision_fraud": float(precision.item()),
+        "recall_fraud": float(recall.item()),
+        "f1_fraud": float(f1.item()),
+        "confusion_matrix": matrix,
+    }
+
+
+# ---------------------------------------------------------------------------
+# 1. CUDA Random Forest
 # ---------------------------------------------------------------------------
  
 class RandomForestModel:
     """
-    RF a kézzel épített feature-táblán. Optuna-alapú hangolás opcionális
-    (tune=True), validation PR-AUC-ra optimalizálva, ahogy a 8. fejezetben
-    rögzítettük a DNN-hez is.
+    cuML Random Forest a kézzel épített feature-táblán.
     """
  
     def __init__(self, random_state: int = 42):
         self.random_state = random_state
-        self.model: RandomForestClassifier | None = None
+        self.model: CuMLRandomForestClassifier | None = None
         self.best_params: dict | None = None
  
     def tune(self, X_train, y_train, X_val, y_val, n_trials: int = 100) -> dict:
@@ -79,16 +144,13 @@ class RandomForestModel:
                 "max_depth": trial.suggest_int("max_depth", 4, 24),
                 "max_features": trial.suggest_float("max_features", 0.2, 1.0),
                 "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 20),
-                "class_weight": trial.suggest_categorical(
-                    "class_weight", ["balanced", "balanced_subsample", None]
-                ),
+                "class_weight": trial.suggest_categorical("class_weight", ["balanced", None]),
                 "random_state": self.random_state,
-                "n_jobs": -1,
             }
-            clf = RandomForestClassifier(**params)
-            clf.fit(X_train, y_train)
-            val_proba = clf.predict_proba(X_val)[:, 1]
-            return average_precision_score(y_val, val_proba)
+            clf = CuMLRandomForestClassifier(**params)
+            clf.fit(_to_gpu_features(X_train), _to_gpu_labels(y_train))
+            val_proba = _to_cupy(clf.predict_proba(_to_gpu_features(X_val)))[:, 1]
+            return _average_precision_score(_to_gpu_labels(y_val), val_proba)
  
         study = optuna.create_study(direction="maximize")
         study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
@@ -101,16 +163,15 @@ class RandomForestModel:
             "max_depth": 12,
             "class_weight": "balanced",
             "random_state": self.random_state,
-            "n_jobs": -1,
         }
-        self.model = RandomForestClassifier(**params)
-        self.model.fit(X_train, y_train)
+        self.model = CuMLRandomForestClassifier(**params)
+        self.model.fit(_to_gpu_features(X_train), _to_gpu_labels(y_train))
         return self
  
-    def predict_proba(self, X) -> np.ndarray:
+    def predict_proba(self, X) -> cp.ndarray:
         if self.model is None:
             raise RuntimeError("A modellt előbb fit()-elni kell.")
-        return self.model.predict_proba(X)[:, 1]
+        return _to_cupy(self.model.predict_proba(_to_gpu_features(X)))[:, 1]
 
     def evaluate(self, X_test, y_test, save_path: str | Path | None = None, model_name: str = "RandomForestModel") -> dict:
         """Futási metrikák és a modell paraméterei mentése JSON fájlba."""
@@ -118,21 +179,21 @@ class RandomForestModel:
             raise RuntimeError("A modellt előbb fit()-elni kell.")
 
         y_proba = self.predict_proba(X_test)
-        y_pred = self.model.predict(X_test)
-
-        tn, fp, fn, tp = confusion_matrix(y_test, y_pred).ravel()
+        metric_values = classification_metrics(y_test, y_proba)
+        tn, fp, fn, tp = cp.asnumpy(metric_values["confusion_matrix"]).ravel()
         metrics = {
             "model_name": model_name,
-            "timestamp": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+            "timestamp": datetime.now().isoformat(timespec="seconds") + "Z",
             "model_params": self.model.get_params(),
             "best_params": self.best_params,
             "n_test_samples": int(len(y_test)),
             "fraud_rate": float(y_test.mean()) if len(y_test) else 0.0,
-            "AUC-ROC": float(roc_auc_score(y_test, y_proba)),
-            "AUC-PR": float(average_precision_score(y_test, y_proba)),
-            "precision_fraud": float(precision_score(y_test, y_pred, zero_division=0)),
-            "recall_fraud": float(recall_score(y_test, y_pred, zero_division=0)),
-            "f1_fraud": float(f1_score(y_test, y_pred, zero_division=0)),
+            "AUC-ROC": metric_values["AUC-ROC"],
+            "AUC-PR": metric_values["AUC-PR"],
+            "precision_fraud": metric_values["precision_fraud"],
+            "accuracy": metric_values["accuracy"],
+            "recall_fraud": metric_values["recall_fraud"],
+            "f1_fraud": metric_values["f1_fraud"],
             "confusion_matrix": {
                 "tn": int(tn),
                 "fp": int(fp),
@@ -144,25 +205,33 @@ class RandomForestModel:
         if save_path is not None:
             path = Path(save_path)
             path.parent.mkdir(parents=True, exist_ok=True)
+            if path.exists():
+                with path.open("r", encoding="utf-8") as f:
+                    existing = json.load(f)
+                if not isinstance(existing, list):
+                    existing = [existing]
+                else:
+                    existing = []
+
+            existing.append(metrics)
+
             with path.open("w", encoding="utf-8") as f:
-                json.dump(metrics, f, indent=2, ensure_ascii=False)
+                json.dump(existing, f, indent=2, ensure_ascii=False)
 
         return metrics
 
 # ---------------------------------------------------------------------------
-# 2. HistGradientBoosting
+# 2. XGBoost CUDA histogram classifier
 # ---------------------------------------------------------------------------
  
-class HistGBModel:
+class XGBoostModel:
     """
-    HGB a kézzel épített feature-táblán, ugyanazon Optuna-protokollal, mint az
-    RF-nél. A kulcs paraméterek (max_iter, learning_rate, max_leaf_nodes,
-    l2_regularization, min_samples_leaf) a korábban rögzített javaslat szerint.
+    XGBoost binary classifier CUDA-s histogram tree builderrel.
     """
  
     def __init__(self, random_state: int = 42):
         self.random_state = random_state
-        self.model: HistGradientBoostingClassifier | None = None
+        self.model: XGBClassifier | None = None
         self.best_params: dict | None = None
  
     def tune(self, X_train, y_train, X_val, y_val, n_trials: int = 50) -> dict:
@@ -170,38 +239,58 @@ class HistGBModel:
  
         def objective(trial: "optuna.Trial") -> float:
             params = {
-                "max_iter": trial.suggest_int("max_iter", 100, 600),
+                "n_estimators": trial.suggest_int("n_estimators", 200, 800),
+                "max_depth": trial.suggest_int("max_depth", 3, 12),
                 "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
-                "max_leaf_nodes": trial.suggest_int("max_leaf_nodes", 15, 127),
-                "l2_regularization": trial.suggest_float("l2_regularization", 1e-4, 1.0, log=True),
-                "min_samples_leaf": trial.suggest_int("min_samples_leaf", 5, 100),
+                "subsample": trial.suggest_float("subsample", 0.6, 1.0),
+                "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0),
+                "reg_lambda": trial.suggest_float("reg_lambda", 1e-4, 10.0, log=True),
                 "random_state": self.random_state,
+                "tree_method": "hist",
+                "device": "cuda",
+                "scale_pos_weight": float(
+                    (y_train == 0).sum() / max((y_train == 1).sum(), 1)
+                ),
             }
-            clf = HistGradientBoostingClassifier(**params)
-            clf.fit(X_train, y_train)
-            val_proba = clf.predict_proba(X_val)[:, 1]
-            return average_precision_score(y_val, val_proba)
+            clf = XGBClassifier(**params)
+            clf.fit(_to_gpu_features(X_train), _to_gpu_labels(y_train))
+            val_proba = cp.asarray(clf.predict_proba(_to_gpu_features(X_val)))[:, 1]
+            return _average_precision_score(_to_gpu_labels(y_val), val_proba)
  
         study = optuna.create_study(direction="maximize")
         study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
         self.best_params = study.best_params
         return self.best_params
  
-    def fit(self, X_train, y_train, params: dict | None = None) -> "HistGBModel":
+    def fit(self, X_train, y_train, params: dict | None = None) -> "XGBoostModel":
         params = params or self.best_params or {
-            "max_iter": 300,
+            "n_estimators": 400,
+            "max_depth": 8,
             "learning_rate": 0.05,
-            "max_leaf_nodes": 31,
+            "subsample": 0.8,
+            "colsample_bytree": 0.8,
             "random_state": self.random_state,
+            "tree_method": "hist",
+            "device": "cuda",
+            "scale_pos_weight": float(
+                (y_train == 0).sum() / max((y_train == 1).sum(), 1)
+            ),
         }
-        self.model = HistGradientBoostingClassifier(**params)
-        self.model.fit(X_train, y_train)
+        params = dict(params)
+        params.setdefault("tree_method", "hist")
+        params.setdefault("device", "cuda")
+        params.setdefault(
+            "scale_pos_weight",
+            float((y_train == 0).sum() / max((y_train == 1).sum(), 1)),
+        )
+        self.model = XGBClassifier(**params)
+        self.model.fit(_to_gpu_features(X_train), _to_gpu_labels(y_train))
         return self
  
-    def predict_proba(self, X) -> np.ndarray:
+    def predict_proba(self, X) -> cp.ndarray:
         if self.model is None:
             raise RuntimeError("A modellt előbb fit()-elni kell.")
-        return self.model.predict_proba(X)[:, 1]
+        return cp.asarray(self.model.predict_proba(_to_gpu_features(X)))[:, 1]
 
 # ---------------------------------------------------------------------------
 # 3. GraphSAGE (customer-merchant bipartit gráf)
@@ -342,6 +431,9 @@ class GraphSAGEModel:
             combined = torch.cat([cust_emb, merch_emb, edge_attr], dim=-1)
             return classifier(combined).squeeze(-1)
  
+        from torchmetrics.classification import BinaryAveragePrecision
+
+        val_average_precision = BinaryAveragePrecision(thresholds=None).to(self.device)
         best_val_pr_auc = -1.0
         best_state = None
         epochs_no_improve = 0
@@ -359,9 +451,10 @@ class GraphSAGEModel:
             classifier.eval()
             with torch.no_grad():
                 val_logits = forward_edges(val_graph)
-                val_probs = torch.sigmoid(val_logits).cpu().numpy()
-                val_labels = val_graph["customer", "transacts", "merchant"].y.cpu().numpy()
-            val_pr_auc = average_precision_score(val_labels, val_probs)
+                val_probs = torch.sigmoid(val_logits)
+                val_labels = val_graph["customer", "transacts", "merchant"].y.long()
+            val_pr_auc = float(val_average_precision(val_probs, val_labels).item())
+            val_average_precision.reset()
             scheduler.step(val_pr_auc)
  
             if val_pr_auc > best_val_pr_auc:

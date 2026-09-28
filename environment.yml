@@ -8,12 +8,13 @@ channels:
 dependencies:
   - python=3.12
   - rapids=26.02
-  - cuda-version=12.6
+  - cuda-version=12.9
+  - xgboost=3.1.*
 
   - matplotlib=3.10.*
   - seaborn=0.13.*
 
-  - pytorch=2.8.*
+  - pytorch-gpu=2.8.*
 
   - pip
 
