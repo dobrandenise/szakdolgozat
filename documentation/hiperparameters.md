@@ -89,7 +89,7 @@ Fraud valószínűség előrejelzés
 - `n_jobs` → Hány CPU magot használjon?
 
 ---
-# Random Forest architektúra
+### Random Forest architektúra
 
 ```text
                     ┌─────────────────┐
@@ -190,7 +190,7 @@ Fraud valószínűség előrejelzés
 | 6 | `random_state` | Reprodukálhatóságot biztosít | - | - | Ugyanazzal a seed-del ugyanazokat az eredményeket kapod |
 
 ---
-## HistGradientBoosting architektúra
+### HistGradientBoosting architektúra
 
 ```text
                     ┌─────────────────┐
@@ -261,132 +261,6 @@ Fraud valószínűség előrejelzés
                   │
                   ▼
          Fraud Probability
-```
----
-
-## TransformerModel hiperparaméterek 🟡
-
-| Hiperparaméter | Jelentés |
-|---------------|----------|
-| `max_len` | Egy customerből legfeljebb ennyi utolsó tranzakció kerül a szekvenciába. |
-| `d_model` | A Transformer belső reprezentációjának dimenziója. |
-| `n_heads` | Az attention fejek száma a Multi-Head Attention rétegben. |
-| `n_layers` | A Transformer Encoder blokkok száma. |
-| `dropout` | Regularizáció overfitting csökkentésére. |
-| `lr` | AdamW optimizer learning rate-je. |
-| `focal_gamma` | A Focal Loss fókuszáló paramétere. Nagyobb értéknél jobban a nehéz esetekre koncentrál. |
-| `focal_alpha` | A pozitív (fraud) osztály súlya a Focal Loss-ban. |
-| `batch_size` | Egy tanítási lépésben feldolgozott customer-szekvenciák száma. |
-| `epochs` | Maximális tanítási epochok száma. |
-| `patience` | Hány javulás nélküli epoch után álljon le az Early Stopping. |
-
----
-### Transformer architektúra
-
-1. **Numerikus feature-ök**
-   - Standardizált numerikus változók (pl. amount, age, distance).
-
-2. **Category Embedding**
-   - A tranzakció kategóriájából 8 dimenziós embedding készül.
-
-3. **Merchant Embedding**
-   - A merchant azonosítóból 16 dimenziós embedding készül.
-
-4. **Feature összefűzés**
-   - Numerikus feature-ök + category embedding + merchant embedding.
-
-5. **Input Projection**
-   - A kombinált feature-vektor `d_model` dimenzióra vetül.
-
-6. **Transformer Encoder**
-   - `n_layers` darab Encoder blokk.
-   - `n_heads` fejű Multi-Head Self-Attention.
-   - Causal mask: csak a múltbeli tranzakciókra figyelhet.
-
-7. **MLP Head**
-   - `Linear(d_model → d_model/2)`
-   - `ReLU`
-   - `Dropout`
-   - `Linear(d_model/2 → 1)`
-
-8. **Kimenet**
-   - Tranzakciónként egy logit.
-   - Sigmoid után fraud valószínűség.
-
----
-### Tanítási stratégia
-
-| Elem | Szerepe |
-|--------|----------|
-| Focal Loss | Az extrém imbalance kezelése. |
-| AdamW | Paraméteroptimalizálás. |
-| Weight Decay | L2 regularizáció. |
-| Gradient Clipping | Gradient explosion megelőzése. |
-| ReduceLROnPlateau | Stagnálás esetén csökkenti a learning rate-et. |
-| Early Stopping | Megakadályozza a túl sokáig tartó tanítást. |
-| PR-AUC | A validációs modellkiválasztás metrikája. |
-
----
-### Transformer architektúra
-
-```text
-Customer tranzakciós szekvencia
-(max_len = 64)
-        │
-        ▼
-┌────────────────────┐
-│ Numerikus feature  │
-└────────────────────┘
-        │
-        ├───────────────┐
-        │               │
-        ▼               ▼
-┌─────────────┐  ┌─────────────┐
-│ Category ID │  │ Merchant ID │
-└─────────────┘  └─────────────┘
-        │               │
-        ▼               ▼
-┌─────────────┐  ┌─────────────┐
-│ Embedding 8 │  │Embedding 16 │
-└─────────────┘  └─────────────┘
-        │               │
-        └───────┬───────┘
-                │
-                ▼
-      Feature Concatenation
-     (Numeric + Cat + Merch)
-                │
-                ▼
-┌──────────────────────────┐
-│      Input Projection    │
-│     (input → d_model)    │
-└──────────────────────────┘
-                │
-                ▼
-┌──────────────────────────┐
-│   Transformer Encoder    │
-│      n_layers = 2        │
-│      n_heads = 4         │
-│      Causal Mask         │
-└──────────────────────────┘
-                │
-                ▼
-┌──────────────────────────┐
-│        MLP Head          │
-│ Linear(d_model,d_model/2)│
-│ ReLU                     │
-│ Dropout                  │
-│ Linear(d_model/2,1)      │
-└──────────────────────────┘
-                │
-                ▼
-            Logit
-                │
-                ▼
-           Sigmoid
-                │
-                ▼
-      Fraud valószínűség
 ```
 ---
 
