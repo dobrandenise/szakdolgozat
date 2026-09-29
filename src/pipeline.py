@@ -69,12 +69,18 @@ def run_pipeline(input_path=RAW_DATA_PATH):
     "max_depth": 16,
     "max_features": 0.45115101356959497,
     "min_samples_leaf": 7,
-    "random_state": self.random_state,
+    "random_state": 42,
   }
+    )
+    RF.tune_threshold(
+        X_val=customer_val.drop(columns=["fraud"]),
+        y_val=customer_val["fraud"],
+        amounts_val=customer_val["amount"],
     )
     RF.evaluate(
         X_test=customer_test.drop(columns=["fraud"]),
         y_test=customer_test["fraud"],
+        amounts_test=customer_test["amount"],
         save_path=PROJECT_ROOT / "metrics" / "rf_evaluation.json",
     )
 
