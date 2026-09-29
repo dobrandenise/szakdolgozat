@@ -1,0 +1,173 @@
+[
+  {
+    "model_name": "without_cluster_features",
+    "timestamp": "2026-09-28T21:34:10Z",
+    "model_params": {
+      "handle": null,
+      "verbose": false,
+      "output_type": null,
+      "split_criterion": "gini",
+      "n_estimators": 727,
+      "bootstrap": true,
+      "max_samples": 1.0,
+      "max_depth": 16,
+      "max_leaves": -1,
+      "max_features": 0.45115101356959497,
+      "n_bins": 128,
+      "min_samples_leaf": 7,
+      "min_samples_split": 2,
+      "min_impurity_decrease": 0.0,
+      "max_batch_size": 4096,
+      "random_state": 42,
+      "n_streams": 4,
+      "oob_score": false
+    },
+    "best_params": null,
+    "n_test_samples": 118930,
+    "fraud_rate": 0.010787858404103253,
+    "AUC-ROC": 0.9991235733032227,
+    "AUC-PR": 0.9524362563688048,
+    "precision_fraud": 0.904995904995905,
+    "accuracy": 0.9975279576221306,
+    "recall_fraud": 0.8612626656274357,
+    "f1_fraud": 0.88258785942492,
+    "confusion_matrix": {
+      "tn": 117531,
+      "fp": 116,
+      "fn": 178,
+      "tp": 1105
+    },
+    "cluster_features": []
+  },
+  {
+    "model_name": "kmeans_features",
+    "timestamp": "2026-09-28T21:34:31Z",
+    "model_params": {
+      "handle": null,
+      "verbose": false,
+      "output_type": null,
+      "split_criterion": "gini",
+      "n_estimators": 727,
+      "bootstrap": true,
+      "max_samples": 1.0,
+      "max_depth": 16,
+      "max_leaves": -1,
+      "max_features": 0.45115101356959497,
+      "n_bins": 128,
+      "min_samples_leaf": 7,
+      "min_samples_split": 2,
+      "min_impurity_decrease": 0.0,
+      "max_batch_size": 4096,
+      "random_state": 42,
+      "n_streams": 4,
+      "oob_score": false
+    },
+    "best_params": null,
+    "n_test_samples": 118930,
+    "fraud_rate": 0.010787858404103253,
+    "AUC-ROC": 0.9987888336181641,
+    "AUC-PR": 0.9516156165253524,
+    "precision_fraud": 0.904995904995905,
+    "accuracy": 0.9975279576221306,
+    "recall_fraud": 0.8612626656274357,
+    "f1_fraud": 0.88258785942492,
+    "confusion_matrix": {
+      "tn": 117531,
+      "fp": 116,
+      "fn": 178,
+      "tp": 1105
+    },
+    "cluster_features": [
+      "cluster_id",
+      "dist_to_centroid"
+    ]
+  },
+  {
+    "model_name": "hdbscan_features",
+    "timestamp": "2026-09-28T21:34:51Z",
+    "model_params": {
+      "handle": null,
+      "verbose": false,
+      "output_type": null,
+      "split_criterion": "gini",
+      "n_estimators": 727,
+      "bootstrap": true,
+      "max_samples": 1.0,
+      "max_depth": 16,
+      "max_leaves": -1,
+      "max_features": 0.45115101356959497,
+      "n_bins": 128,
+      "min_samples_leaf": 7,
+      "min_samples_split": 2,
+      "min_impurity_decrease": 0.0,
+      "max_batch_size": 4096,
+      "random_state": 42,
+      "n_streams": 4,
+      "oob_score": false
+    },
+    "best_params": null,
+    "n_test_samples": 118930,
+    "fraud_rate": 0.010787858404103253,
+    "AUC-ROC": 0.9991280436515808,
+    "AUC-PR": 0.9521182961166581,
+    "precision_fraud": 0.9011345218800648,
+    "accuracy": 0.9975363659295384,
+    "recall_fraud": 0.8667186282151208,
+    "f1_fraud": 0.8835915772745331,
+    "confusion_matrix": {
+      "tn": 117525,
+      "fp": 122,
+      "fn": 171,
+      "tp": 1112
+    },
+    "cluster_features": [
+      "hdbscan_cluster_id",
+      "is_hdbscan_noise"
+    ]
+  },
+  {
+    "model_name": "kmeans_and_hdbscan_features",
+    "timestamp": "2026-09-28T21:35:12Z",
+    "model_params": {
+      "handle": null,
+      "verbose": false,
+      "output_type": null,
+      "split_criterion": "gini",
+      "n_estimators": 727,
+      "bootstrap": true,
+      "max_samples": 1.0,
+      "max_depth": 16,
+      "max_leaves": -1,
+      "max_features": 0.45115101356959497,
+      "n_bins": 128,
+      "min_samples_leaf": 7,
+      "min_samples_split": 2,
+      "min_impurity_decrease": 0.0,
+      "max_batch_size": 4096,
+      "random_state": 42,
+      "n_streams": 4,
+      "oob_score": false
+    },
+    "best_params": null,
+    "n_test_samples": 118930,
+    "fraud_rate": 0.010787858404103253,
+    "AUC-ROC": 0.9983878135681152,
+    "AUC-PR": 0.9518318461065275,
+    "precision_fraud": 0.9045676998368679,
+    "accuracy": 0.9975531825443538,
+    "recall_fraud": 0.8643803585346843,
+    "f1_fraud": 0.8840175368672779,
+    "confusion_matrix": {
+      "tn": 117530,
+      "fp": 117,
+      "fn": 174,
+      "tp": 1109
+    },
+    "cluster_features": [
+      "cluster_id",
+      "dist_to_centroid",
+      "hdbscan_cluster_id",
+      "is_hdbscan_noise"
+    ]
+  }
+]

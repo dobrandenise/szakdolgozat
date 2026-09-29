@@ -79,6 +79,43 @@ class Clusterer:
         self._is_fitted = True
         return self
 
+    def predict_kmeans(self, df: pd.DataFrame) -> pd.DataFrame:
+        """KMeans predikció; a KMeans-hez tartozó oszlopokat adja vissza."""
+        if not self._is_fitted:
+            raise RuntimeError("A Clusterer nincs betanítva — előbb hívd meg a fit()-et.")
+
+        raw_matrix = self._build_raw_matrix(df)
+        scaled_matrix = self.scaler.transform(raw_matrix)
+
+        cluster_id = self.kmeans_model.predict(scaled_matrix)
+        assigned_centroids = self.kmeans_centroids[cluster_id]
+        dist_to_centroid = cp.linalg.norm(
+            scaled_matrix - assigned_centroids, axis=1
+        )
+
+        out_df = df.copy()
+        out_df["cluster_id"] = cp.asnumpy(cluster_id).astype(np.int16)
+        out_df["dist_to_centroid"] = cp.asnumpy(dist_to_centroid)
+        return out_df
+
+    def predict_hdbscan(self, df: pd.DataFrame) -> pd.DataFrame:
+        """HDBSCAN predikció; a HDBSCAN-hez tartozó oszlopokat adja vissza."""
+        if not self._is_fitted:
+            raise RuntimeError("A Clusterer nincs betanítva — előbb hívd meg a fit()-et.")
+
+        raw_matrix = self._build_raw_matrix(df)
+        scaled_matrix = self.scaler.transform(raw_matrix)
+
+        hdbscan_labels, _strengths = approximate_predict(
+            self.hdbscan_model, scaled_matrix
+        )
+        labels = cp.asnumpy(hdbscan_labels)
+
+        out_df = df.copy()
+        out_df["hdbscan_cluster_id"] = labels.astype(np.int32)
+        out_df["is_hdbscan_noise"] = (labels == -1).astype(np.int8)
+        return out_df
+
     def transform(self, df: pd.DataFrame) -> pd.DataFrame:
         """A betanított modellek alkalmazása bármely (train/val/test) adatra."""
         if not self._is_fitted:
