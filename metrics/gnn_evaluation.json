@@ -37,5 +37,122 @@
       "baseline_cost": 784218.94,
       "cost_savings": 0.9530926911813683
     }
+  },
+  {
+    "model_name": "GraphSAGEModel",
+    "timestamp": "2026-09-30T22:22:08Z",
+    "model_params": {
+      "hidden_dim": 64,
+      "num_layers": 2,
+      "dropout": 0.3,
+      "lr": 0.001,
+      "sup_batch_size": 16384,
+      "pos_weight": 60,
+      "eval_chunk_steps": 1
+    },
+    "best_val_pr_auc": 0.9451013803482056,
+    "threshold": 0.8,
+    "n_test_samples": 120182,
+    "fraud_rate": 0.011881978998518913,
+    "AUC-ROC": 0.9976275563240051,
+    "AUC-PR": 0.8481778040512206,
+    "precision_fraud": 0.4703259005145798,
+    "accuracy": 0.9866785375513804,
+    "recall_fraud": 0.9600840336134454,
+    "f1_fraud": 0.6313608104996546,
+    "confusion_matrix": {
+      "tn": 117210,
+      "fp": 1544,
+      "fn": 57,
+      "tp": 1371
+    },
+    "cost": {
+      "fp_cost": 10.0,
+      "tp_cost": 10.0,
+      "fn_multiplier": 1.0,
+      "threshold": 0.8,
+      "total_cost": 35519.93,
+      "total_cost_at_0.5": 45992.17,
+      "baseline_cost": 784218.94,
+      "cost_savings": 0.9547066154765402
+    }
+  },
+  {
+    "model_name": "GraphSAGEModel",
+    "timestamp": "2026-09-30T22:27:31Z",
+    "model_params": {
+      "hidden_dim": 64,
+      "num_layers": 2,
+      "dropout": 0.3,
+      "lr": 0.001,
+      "sup_batch_size": 16384,
+      "pos_weight": 60,
+      "eval_chunk_steps": 1
+    },
+    "best_val_pr_auc": 0.9452465772628784,
+    "threshold": 0.8,
+    "n_test_samples": 120182,
+    "fraud_rate": 0.011881978998518913,
+    "AUC-ROC": 0.9975863695144653,
+    "AUC-PR": 0.8390901274756951,
+    "precision_fraud": 0.47178251892635925,
+    "accuracy": 0.98675342397364,
+    "recall_fraud": 0.9600840336134454,
+    "f1_fraud": 0.6326718966312875,
+    "confusion_matrix": {
+      "tn": 117219,
+      "fp": 1535,
+      "fn": 57,
+      "tp": 1371
+    },
+    "cost": {
+      "fp_cost": 10.0,
+      "tp_cost": 10.0,
+      "fn_multiplier": 1.0,
+      "threshold": 0.8,
+      "total_cost": 35429.93,
+      "total_cost_at_0.5": 45772.17,
+      "baseline_cost": 784218.94,
+      "cost_savings": 0.954821379345926
+    }
+  },
+  {
+    "model_name": "GraphSAGEModel",
+    "timestamp": "2026-09-30T22:40:41Z",
+    "model_params": {
+      "hidden_dim": 64,
+      "num_layers": 2,
+      "dropout": 0.3,
+      "lr": 0.001,
+      "sup_batch_size": 16384,
+      "pos_weight": 40,
+      "eval_chunk_steps": 1
+    },
+    "best_val_pr_auc": 0.9473800659179688,
+    "threshold": 0.8,
+    "n_test_samples": 120182,
+    "fraud_rate": 0.011881978998518913,
+    "AUC-ROC": 0.9966946840286255,
+    "AUC-PR": 0.7970148703808725,
+    "precision_fraud": 0.5151864667435602,
+    "accuracy": 0.9887753573746485,
+    "recall_fraud": 0.938375350140056,
+    "f1_fraud": 0.6651774633904195,
+    "confusion_matrix": {
+      "tn": 117493,
+      "fp": 1261,
+      "fn": 88,
+      "tp": 1340
+    },
+    "cost": {
+      "fp_cost": 10.0,
+      "tp_cost": 10.0,
+      "fn_multiplier": 1.0,
+      "threshold": 0.8,
+      "total_cost": 39945.619999999995,
+      "total_cost_at_0.5": 45445.29,
+      "baseline_cost": 784218.94,
+      "cost_savings": 0.9490631787087417
+    }
   }
 ]
