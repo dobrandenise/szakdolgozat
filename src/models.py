@@ -120,8 +120,9 @@ def classification_metrics(y_true, y_score, threshold: float = 0.5) -> dict:
         "confusion_matrix": matrix,
     }
 
-def compute_cost(y_true, y_pred, amounts, fp_cost=10.0, tp_cost=10.0, fn_power=1.0):
-    """Teljes költség: FN = összeg**fn_power, FP és TP = fix ügyintézési költség."""
+def compute_cost(y_true, y_pred, amounts, fp_cost=10.0, tp_cost=10.0,
+                 fn_multiplier=1.0):
+    """FN = összeg * fn_multiplier; FP és TP = fix költség."""
     y_true = cp.asnumpy(_to_cupy(y_true))
     y_pred = cp.asnumpy(_to_cupy(y_pred))
     amounts = cp.asnumpy(_to_cupy(amounts)).astype(float)
@@ -130,20 +131,20 @@ def compute_cost(y_true, y_pred, amounts, fp_cost=10.0, tp_cost=10.0, fn_power=1
     fp_mask = (y_true == 0) & (y_pred == 1)
     tp_mask = (y_true == 1) & (y_pred == 1)
 
-    fn_cost_total = np.sum(amounts[fn_mask] ** fn_power)
+    fn_cost_total = np.sum(amounts[fn_mask] * fn_multiplier)
     return float(fn_cost_total + fp_cost * fp_mask.sum() + tp_cost * tp_mask.sum())
 
 
 def find_optimal_threshold(y_true, y_proba, amounts, fp_cost=10.0, tp_cost=10.0,
-                           fn_power=1.0, thresholds=None):
+                           fn_multiplier=1.0, thresholds=None):
     """Azt a küszöböt keresi, amelyiknél a teljes költség minimális."""
     if thresholds is None:
-        thresholds = np.linspace(0.01, 0.99, 99)
+        thresholds = np.linspace(0.1, 0.8, 69)
     y_proba = cp.asnumpy(_to_cupy(y_proba))
 
     costs = np.array([
         compute_cost(y_true, (y_proba >= t).astype(int), amounts,
-                     fp_cost, tp_cost, fn_power)
+                     fp_cost, tp_cost, fn_multiplier)
         for t in thresholds
     ])
     best_idx = int(np.argmin(costs))
@@ -160,14 +161,14 @@ class RandomForestModel:
     """
  
     def __init__(self, random_state: int = 42, fp_cost: float = 10.0,
-                 tp_cost: float = 10.0, fn_power: float = 1.0):
+                 tp_cost: float = 10.0, fn_multiplier: float = 1.0):
         self.random_state = random_state
         self.model: CuMLRandomForestClassifier | None = None
         self.best_params: dict | None = None
-        self.threshold: float = 0.5
+        self.threshold = 0.5
         self.fp_cost = fp_cost
         self.tp_cost = tp_cost
-        self.fn_power = fn_power
+        self.fn_multiplier = fn_multiplier
  
     def tune(self, X_train, y_train, X_val, y_val, n_trials: int = 100) -> dict:
         import optuna
@@ -207,27 +208,30 @@ class RandomForestModel:
             raise RuntimeError("A modellt előbb fit()-elni kell.")
         return _to_cupy(self.model.predict_proba(_to_gpu_features(X)))[:, 1]
 
-    def tune_threshold(self, X_val, y_val, amounts_val) -> float:
+    def tune_threshold(self, X_val, y_val, amounts_val, thresholds=None) -> float:
         """Költségminimalizáló küszöb keresése a VALIDÁCIÓS halmazon."""
         if self.model is None:
             raise RuntimeError("A modellt előbb fit()-elni kell.")
         val_proba = self.predict_proba(X_val)
         self.threshold, _, _, _ = find_optimal_threshold(
             y_val, val_proba, amounts_val,
-            fp_cost=self.fp_cost, tp_cost=self.tp_cost, fn_power=self.fn_power,
+            fp_cost=self.fp_cost, tp_cost=self.tp_cost,
+            fn_multiplier=self.fn_multiplier, thresholds=thresholds,
         )
         return self.threshold
 
     def evaluate(self, X_test, y_test, save_path: str | Path | None = None,
-                 model_name: str = "RandomForestModel", amounts_test=None) -> dict:
+                 model_name: str = "RandomForestModel", amounts_test=None,
+                 threshold: float | None = None) -> dict:
         """Futási metrikák és a modell paraméterei mentése JSON fájlba."""
         if self.model is None:
             raise RuntimeError("A modellt előbb fit()-elni kell.")
 
+        threshold = self.threshold if threshold is None else threshold
         y_proba = self.predict_proba(X_test)
-        y_pred = (y_proba >= self.threshold).astype(int)
+        y_pred = (y_proba >= threshold).astype(int)
         
-        metric_values = classification_metrics(y_test, y_proba, threshold=self.threshold)
+        metric_values = classification_metrics(y_test, y_proba, threshold=threshold)
         tn, fp, fn, tp = cp.asnumpy(metric_values["confusion_matrix"]).ravel()
         
         metrics = {
@@ -235,6 +239,7 @@ class RandomForestModel:
             "timestamp": datetime.now().isoformat(timespec="seconds") + "Z",
             "model_params": self.model.get_params(),
             "best_params": self.best_params,
+            "threshold": threshold,
             "n_test_samples": int(len(y_test)),
             "fraud_rate": float(y_test.mean()) if len(y_test) else 0.0,
             "AUC-ROC": metric_values["AUC-ROC"],
@@ -255,19 +260,19 @@ class RandomForestModel:
             amounts_arr = np.asarray(amounts_test, dtype=float)
             y_arr = np.asarray(y_test)
             cost_opt = compute_cost(y_arr, y_pred, amounts_arr, self.fp_cost,
-                                    self.tp_cost, self.fn_power)
+                                    self.tp_cost, self.fn_multiplier)
             cost_default = compute_cost(y_arr, (y_proba >= 0.5).astype(int),
                                         amounts_arr, self.fp_cost, self.tp_cost,
-                                        self.fn_power)
+                                        self.fn_multiplier)
             cost_baseline = compute_cost(
                 y_arr, np.zeros_like(y_arr), amounts_arr,
-                self.fp_cost, self.tp_cost, self.fn_power,
+                self.fp_cost, self.tp_cost, self.fn_multiplier,
             )
             metrics["cost"] = {
                 "fp_cost": self.fp_cost,
                 "tp_cost": self.tp_cost,
-                "fn_power": self.fn_power,
-                "threshold": self.threshold,
+                "fn_multiplier": self.fn_multiplier,
+                "threshold": threshold,
                 "total_cost": cost_opt,
                 "total_cost_at_0.5": cost_default,
                 "baseline_cost": cost_baseline,
@@ -300,10 +305,15 @@ class XGBoostModel:
     XGBoost binary classifier CUDA-s histogram tree builderrel.
     """
  
-    def __init__(self, random_state: int = 42):
+    def __init__(self, random_state: int = 42, fp_cost: float = 10.0,
+                 tp_cost: float = 10.0, fn_multiplier: float = 1.0):
         self.random_state = random_state
         self.model: XGBClassifier | None = None
         self.best_params: dict | None = None
+        self.threshold = 0.5
+        self.fp_cost = fp_cost
+        self.tp_cost = tp_cost
+        self.fn_multiplier = fn_multiplier
  
     def tune(self, X_train, y_train, X_val, y_val, n_trials: int = 50) -> dict:
         import optuna
@@ -362,6 +372,96 @@ class XGBoostModel:
         if self.model is None:
             raise RuntimeError("A modellt előbb fit()-elni kell.")
         return cp.asarray(self.model.predict_proba(_to_gpu_features(X)))[:, 1]
+
+    def tune_threshold(self, X_val, y_val, amounts_val, thresholds=None) -> float:
+        """Költségminimalizáló küszöb keresése a validációs halmazon."""
+        if self.model is None:
+            raise RuntimeError("A modellt előbb fit()-elni kell.")
+        val_proba = self.predict_proba(X_val)
+        self.threshold, _, _, _ = find_optimal_threshold(
+            y_val, val_proba, amounts_val,
+            fp_cost=self.fp_cost, tp_cost=self.tp_cost,
+            fn_multiplier=self.fn_multiplier, thresholds=thresholds,
+        )
+        return self.threshold
+
+    def evaluate(self, X_test, y_test, save_path: str | Path | None = None,
+                 model_name: str = "XGBoostModel", amounts_test=None,
+                 threshold: float | None = None) -> dict:
+        """Futási metrikák és a modell paramétereinek mentése JSON fájlba."""
+        if self.model is None:
+            raise RuntimeError("A modellt előbb fit()-elni kell.")
+
+        threshold = self.threshold if threshold is None else threshold
+        y_proba = self.predict_proba(X_test)
+        y_pred = (y_proba >= threshold).astype(int)
+        metric_values = classification_metrics(y_test, y_proba, threshold=threshold)
+        tn, fp, fn, tp = cp.asnumpy(metric_values["confusion_matrix"]).ravel()
+
+        metrics = {
+            "model_name": model_name,
+            "timestamp": datetime.now().isoformat(timespec="seconds") + "Z",
+            "model_params": self.model.get_params(),
+            "best_params": self.best_params,
+            "threshold": threshold,
+            "n_test_samples": int(len(y_test)),
+            "fraud_rate": float(y_test.mean()) if len(y_test) else 0.0,
+            "AUC-ROC": metric_values["AUC-ROC"],
+            "AUC-PR": metric_values["AUC-PR"],
+            "precision_fraud": metric_values["precision_fraud"],
+            "accuracy": metric_values["accuracy"],
+            "recall_fraud": metric_values["recall_fraud"],
+            "f1_fraud": metric_values["f1_fraud"],
+            "confusion_matrix": {
+                "tn": int(tn),
+                "fp": int(fp),
+                "fn": int(fn),
+                "tp": int(tp),
+            },
+        }
+
+        if amounts_test is not None:
+            amounts_arr = np.asarray(amounts_test, dtype=float)
+            y_arr = np.asarray(y_test)
+            cost_opt = compute_cost(
+                y_arr, y_pred, amounts_arr, self.fp_cost, self.tp_cost,
+                self.fn_multiplier,
+            )
+            cost_default = compute_cost(
+                y_arr, (y_proba >= 0.5).astype(int), amounts_arr,
+                self.fp_cost, self.tp_cost, self.fn_multiplier,
+            )
+            cost_baseline = compute_cost(
+                y_arr, np.zeros_like(y_arr), amounts_arr,
+                self.fp_cost, self.tp_cost, self.fn_multiplier,
+            )
+            metrics["cost"] = {
+                "fp_cost": self.fp_cost,
+                "tp_cost": self.tp_cost,
+                "fn_multiplier": self.fn_multiplier,
+                "threshold": threshold,
+                "total_cost": cost_opt,
+                "total_cost_at_0.5": cost_default,
+                "baseline_cost": cost_baseline,
+                "cost_savings": 1 - cost_opt / cost_baseline if cost_baseline else 0.0,
+            }
+
+        if save_path is not None:
+            path = Path(save_path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            existing = []
+            if path.exists():
+                with path.open("r", encoding="utf-8") as f:
+                    existing = json.load(f)
+                if not isinstance(existing, list):
+                    existing = [existing]
+
+            existing.append(metrics)
+
+            with path.open("w", encoding="utf-8") as f:
+                json.dump(existing, f, indent=2, ensure_ascii=False)
+
+        return metrics
 
 # ---------------------------------------------------------------------------
 # 3. GraphSAGE (customer-merchant bipartit gráf)

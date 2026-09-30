@@ -1,11 +1,12 @@
 from pathlib import Path
+import os
 
 import pandas as pd
 from sklearn.preprocessing import OrdinalEncoder
 
 from clustering import Clusterer
 from feature_engineering import FeatureEngineering
-from models import RandomForestModel
+from models import RandomForestModel, XGBoostModel, GraphSAGEModel
 from preprocessor import Preprocessor
 from data_split import DataSplit
 
@@ -14,6 +15,23 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 RAW_DATA_PATH = PROJECT_ROOT / "data" / "raw" / "BankSim.csv"
 CLEANED_DATA_PATH = PROJECT_ROOT / "data" / "processed" / "BankSim_cleaned.csv"
 FEATURED_DATA_PATH = PROJECT_ROOT / "data" / "processed" / "BankSim_featured.csv"
+XGB_PARAMS = {
+	"n_estimators": 577,
+	"max_depth": 12,
+	"learning_rate": 0.022070435848525118,
+	"subsample": 0.9053079686928301,
+	"colsample_bytree": 0.6209063298688097,
+	"random_state": 42,
+	"tree_method": "hist",
+	"device": "cuda",
+}
+RF_PARAMS = {
+	"n_estimators": 727,
+	"max_depth": 16,
+	"max_features": 0.45115101356959497,
+	"min_samples_leaf": 7,
+	"random_state": 42,
+}
 def encode_categoricals(df: pd.DataFrame) -> pd.DataFrame:
     categorical_cols = [
         col for col in ["age", "gender", "category", "merchant", "customer"]
@@ -27,7 +45,7 @@ def encode_categoricals(df: pd.DataFrame) -> pd.DataFrame:
     encoded_df[categorical_cols] = encoder.fit_transform(encoded_df[categorical_cols])
     return encoded_df
 
-def run_pipeline(input_path=RAW_DATA_PATH):
+def run_pipeline(input_path=RAW_DATA_PATH, model="XGB"):
     """Run preprocessing, feature engineering, data splitting and clustering in order."""
     
     preprocessor = Preprocessor(input_path=RAW_DATA_PATH)
@@ -47,10 +65,6 @@ def run_pipeline(input_path=RAW_DATA_PATH):
     customer_df = pd.concat([customer_train, customer_val, customer_test], ignore_index=True)
     #time_df = pd.concat([time_train, time_val, time_test], ignore_index=True)
 
-    clusterer_high_signal = Clusterer({"n_clusters": 3, "random_state": 42, "n_init": 10}, {"min_cluster_size": 400, "min_samples": 30})
-    customer_df = clusterer_high_signal.fit_transform(customer_train, customer_df)
-    #time_df = clusterer_high_signal.fit_transform(time_train, time_df)
-
     customer_df = encode_categoricals(customer_df)
     #time_df = encode_categoricals(time_df)
 
@@ -59,30 +73,49 @@ def run_pipeline(input_path=RAW_DATA_PATH):
     #data_time_splitter = DataSplit(time_df)
     #time_train, time_val, time_test = data_time_splitter.time_split()
 
-#---RandomForest modell---
-    RF = RandomForestModel()
-    RF.fit(
-        X_train=customer_train.drop(columns=["fraud"]),
-        y_train=customer_train["fraud"],
-        params={
-    "n_estimators": 727,
-    "max_depth": 16,
-    "max_features": 0.45115101356959497,
-    "min_samples_leaf": 7,
-    "random_state": 42,
-  }
-    )
-    RF.tune_threshold(
-        X_val=customer_val.drop(columns=["fraud"]),
-        y_val=customer_val["fraud"],
-        amounts_val=customer_val["amount"],
-    )
-    RF.evaluate(
-        X_test=customer_test.drop(columns=["fraud"]),
-        y_test=customer_test["fraud"],
-        amounts_test=customer_test["amount"],
-        save_path=PROJECT_ROOT / "metrics" / "rf_evaluation.json",
-    )
+    if(model == "RF"):
+        print("---RandomForest modell---")
+        RF = RandomForestModel()
+        RF.fit(
+            X_train=customer_train.drop(columns=["fraud"]),
+            y_train=customer_train["fraud"],
+            params=RF_PARAMS,
+        )
+        threshold = RF.tune_threshold(
+            X_val=customer_val.drop(columns=["fraud"]),
+            y_val=customer_val["fraud"],
+            amounts_val=customer_val["amount"],
+        )
+        RF.evaluate(
+            X_test=customer_test.drop(columns=["fraud"]),
+            y_test=customer_test["fraud"],
+            amounts_test=customer_test["amount"],
+            threshold=threshold,
+            save_path=PROJECT_ROOT / "metrics" / "rf_evaluation.json",
+        )
+    elif(model == "XGB"):
+        print("---XGBoost modell---")
+        XGB= XGBoostModel()
+        XGB.fit(
+            X_train=customer_train.drop(columns=["fraud"]),
+            y_train=customer_train["fraud"],
+            params=XGB_PARAMS,
+        )
+        threshold = XGB.tune_threshold(
+            X_val=customer_val.drop(columns=["fraud"]),
+            y_val=customer_val["fraud"],
+            amounts_val=customer_val["amount"],
+        )
+        XGB.evaluate(
+            X_test=customer_test.drop(columns=["fraud"]),
+            y_test=customer_test["fraud"],
+            amounts_test=customer_test["amount"],
+            save_path=PROJECT_ROOT / "metrics" / "xgb_evaluation.json",
+            threshold=threshold,
+        )
+    else:
+        print("---GraphSAGE modell---")
+        GNN = GraphSAGEModel()
 
     """
     customer_train_path = PROJECT_ROOT / "data" / "processed" / "dataset_customer_split_train.csv"
@@ -98,4 +131,7 @@ def run_pipeline(input_path=RAW_DATA_PATH):
 
 
 if __name__ == "__main__":
-    run_pipeline()
+    model = os.getenv("MODEL", "XGB").strip().upper()
+    if model not in {"RF", "XGB","GNN"}:
+        raise SystemExit("A MODEL környezeti változó értéke csak RF, XGB vagy GNN lehet.")
+    run_pipeline(model=model)
