@@ -131,5 +131,55 @@
       "baseline_cost": 724311.58,
       "cost_savings": 0.9645160719368866
     }
+  },
+  {
+    "model_name": "RandomForestModel",
+    "timestamp": "2026-09-30T20:47:03Z",
+    "model_params": {
+      "handle": null,
+      "verbose": false,
+      "output_type": null,
+      "split_criterion": "gini",
+      "n_estimators": 727,
+      "bootstrap": true,
+      "max_samples": 1.0,
+      "max_depth": 16,
+      "max_leaves": -1,
+      "max_features": 0.45115101356959497,
+      "n_bins": 128,
+      "min_samples_leaf": 7,
+      "min_samples_split": 2,
+      "min_impurity_decrease": 0.0,
+      "max_batch_size": 4096,
+      "random_state": 42,
+      "n_streams": 4,
+      "oob_score": false
+    },
+    "best_params": null,
+    "threshold": 0.12058823529411766,
+    "n_test_samples": 119198,
+    "fraud_rate": 0.011300525176596923,
+    "AUC-ROC": 0.998735785484314,
+    "AUC-PR": 0.9397717248030134,
+    "precision_fraud": 0.6528282304099636,
+    "accuracy": 0.9936408328998809,
+    "recall_fraud": 0.9339272457312546,
+    "f1_fraud": 0.7684789248625534,
+    "confusion_matrix": {
+      "tn": 117182,
+      "fp": 669,
+      "fn": 89,
+      "tp": 1258
+    },
+    "cost": {
+      "fp_cost": 10.0,
+      "tp_cost": 10.0,
+      "fn_multiplier": 1.0,
+      "threshold": 0.12058823529411766,
+      "total_cost": 26186.59,
+      "total_cost_at_0.5": 41139.7,
+      "baseline_cost": 724311.58,
+      "cost_savings": 0.9638462358975401
+    }
   }
 ]
