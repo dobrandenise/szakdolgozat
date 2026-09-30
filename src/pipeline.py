@@ -62,6 +62,10 @@ def run_pipeline(input_path=RAW_DATA_PATH, model="XGB"):
     customer_train, customer_val, customer_test = fe_wide.fit_and_add_train_dependent_features(customer_train, data_splitter, split_name="customer")
     #time_train, time_val, time_test = fe_wide.fit_and_add_train_dependent_features(time_train, data_splitter, split_name="time")
 
+    graph_train, graph_val, graph_test = (
+        customer_train.copy(), customer_val.copy(), customer_test.copy()
+    )
+
     customer_df = pd.concat([customer_train, customer_val, customer_test], ignore_index=True)
     #time_df = pd.concat([time_train, time_val, time_test], ignore_index=True)
 
@@ -113,10 +117,29 @@ def run_pipeline(input_path=RAW_DATA_PATH, model="XGB"):
             save_path=PROJECT_ROOT / "metrics" / "xgb_evaluation.json",
             threshold=threshold,
         )
-    else:
+    elif(model == "GNN"):
         print("---GraphSAGE modell---")
-        GNN = GraphSAGEModel()
-
+        GNN = GraphSAGEModel(eval_chunk_steps=1)
+        GNN.fit(train_df=graph_train, val_df=graph_val)
+        threshold = GNN.tune_threshold(
+            X_val=graph_val.drop(columns=["fraud"]),
+            y_val=graph_val["fraud"],
+            amounts_val=graph_val["amount"],
+        )
+        test_context = pd.concat(
+            [graph_train.drop(columns=["fraud"]), graph_val.drop(columns=["fraud"])],
+            ignore_index=True,
+        )
+        GNN.evaluate(
+            X_test=graph_test.drop(columns=["fraud"]),
+            y_test=graph_test["fraud"],
+            amounts_test=graph_test["amount"],
+            threshold=threshold,
+            context_df=test_context,
+            save_path=PROJECT_ROOT / "metrics" / "gnn_evaluation.json",
+        )
+    else:
+        raise ValueError("A MODEL környezeti változó értéke csak RF, XGB vagy GNN lehet.")
     """
     customer_train_path = PROJECT_ROOT / "data" / "processed" / "dataset_customer_split_train.csv"
     time_train_path = PROJECT_ROOT / "data" / "processed" / "dataset_time_split_train.csv"
