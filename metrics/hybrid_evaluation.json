@@ -1,0 +1,52 @@
+[
+  {
+    "model_name": "XGBoostGraphSAGEEnsemble",
+    "timestamp": "2026-10-06T21:00:05Z",
+    "model_params": {
+      "xgboost": {
+        "n_estimators": 577,
+        "max_depth": 12,
+        "learning_rate": 0.022070435848525118,
+        "subsample": 0.9053079686928301,
+        "colsample_bytree": 0.6209063298688097,
+        "random_state": 42,
+        "tree_method": "hist",
+        "device": "cuda"
+      },
+      "graphsage": {
+        "hidden_dim": 64,
+        "num_layers": 2,
+        "dropout": 0.3,
+        "pos_weight": 40,
+        "eval_chunk_steps": 1
+      }
+    },
+    "combination": "weighted_probability_average",
+    "gnn_weight": 0.8500000000000001,
+    "threshold": 0.6970588235294118,
+    "n_test_samples": 120182,
+    "fraud_rate": 0.011881978998518913,
+    "AUC-ROC": 0.996383011341095,
+    "AUC-PR": 0.7796895682693747,
+    "precision_fraud": 0.5420902806018707,
+    "accuracy": 0.9898404087134512,
+    "recall_fraud": 0.9334733893557423,
+    "f1_fraud": 0.6858759969127861,
+    "confusion_matrix": {
+      "tn": 117628,
+      "fp": 1126,
+      "fn": 95,
+      "tp": 1333
+    },
+    "cost": {
+      "fp_cost": 10.0,
+      "tp_cost": 10.0,
+      "fn_multiplier": 1.0,
+      "threshold": 0.6970588235294118,
+      "total_cost": 39619.92,
+      "total_cost_at_0.5": 42402.05,
+      "baseline_cost": 784218.94,
+      "cost_savings": 0.9494784964005077
+    }
+  }
+]

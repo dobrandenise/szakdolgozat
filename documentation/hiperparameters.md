@@ -262,6 +262,24 @@ Fraud valószínűség előrejelzés
                   ▼
          Fraud Probability
 ```
+
+---
+
+## XGBoost + GraphSAGE hibrid modell
+
+A pipeline a két modell fraud-valószínűségét súlyozott átlagként kombinálja:
+
+```text
+összesített valószínűség = (1 - GNN-súly) × XGBoost + GNN-súly × GraphSAGE
+```
+
+A GNN-súlyt 0 és 1 között 0,05-ös lépésekben, a döntési küszöböt pedig a validációs halmazon választja ki a meglévő költségfüggvény minimalizálásával. A kiválasztott súlyt és küszöböt a teszthalmazon változtatás nélkül alkalmazza. Futtatás:
+
+```bash
+MODEL=HYBRID python src/pipeline.py
+```
+
+Az eredmények a `metrics/hybrid_evaluation.json` fájlba kerülnek.
 ---
 
 ## GraphSAGE hiperparaméterek 🔴
