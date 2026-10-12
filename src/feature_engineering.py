@@ -13,23 +13,25 @@ class FeatureEngineering:
 
     FONTOS — kauzalitás:
     Minden history-alapú feature-t (fraud_prior-ok, tx_count_hist-ek,
-    amount z-score/ratio, tenure, stb.) *expanding window*, entitásonként
+    amount z-score/ratio, tenure, stb.) entitásonként
     (customer/merchant/category) számolunk: egy adott sor csak az adott
     entitás **korábbi step-jeiből** számolt statisztikát kaphatja meg — a
     saját napi (step) tranzakcióit sosem, hogy egy napon belüli tranzakciók
     ne "lássák" egymást.
+
+    A train-fit útvonalon a fraud-priorok nevezője és számlálója kizárólag
+    a train halmaz címkéiből számolódik; a nem train sorok címkéi nem
+    kerülnek a prior history-ba.
 
     Emiatt ezt az osztályt a **teljes, step szerint rendezett, megtisztított
     datasetet** kapva kell futtatni, *a train/val/test split ELŐTT* — mivel
     minden feature csakis az adott sor előtti napokra támaszkodik, ez nem
     okoz leakage-t, bármelyik split-résznek adod is majd oda az eredményt.
 
-    Kivétel: az `is_amount_outlier` (IQR-határ) és a `global_fraud_prior`
-    (Bayes-simításhoz) olyan statisztikák, amik a teljes populáció "globális"
-    jellemzői — ha szigorúan train-only fit-et szeretnél, add át őket az
-    `amount_outlier_bounds` / `global_fraud_prior` konstruktor-paraméterekkel
-    a train-en számolt értékekkel, ahelyett hogy a metódusok magukat a
-    kapott df-et használnák a becsléshez.
+    Kivétel: az `is_amount_outlier` IQR-határa és a Bayes-simítás
+    `global_fraud_prior` értéke populációs statisztika. A train-fit útvonal
+    mindkettőt kizárólag a train adataiból számolja; közvetlen, önálló
+    használatkor a megfelelő konstruktor-paraméterekkel adhatók meg.
     """
 
     def __init__(
@@ -87,6 +89,14 @@ class FeatureEngineering:
         )
         hist_cols = [f"hist_{c}" for c in value_cols]
         return merged[hist_cols].fillna(0.0).set_index(self.df.index)
+
+    def _fraud_history_masked(self, entity_col, label_mask):
+        """Kauzális napi fraud-history, csak a label_mask=True sorok címkéiből."""
+        self.df["_ones_lab"] = label_mask.astype(int)
+        self.df["_fraud_lab"] = self.df[self.fraud_col].where(label_mask, 0)
+        hist = self._causal_daily_history(entity_col, ["_ones_lab", "_fraud_lab"])
+        self.df = self.df.drop(columns=["_ones_lab", "_fraud_lab"])
+        return hist["hist__ones_lab"], hist["hist__fraud_lab"]
 
     def _bayes_smooth(self, fraud_sum, n):
         return (fraud_sum + self.bayes_m * self.global_fraud_prior) / (n + self.bayes_m)
@@ -211,8 +221,12 @@ class FeatureEngineering:
         self.df = self.df.drop(columns=["_ones"])
         return n, fraud_sum
 
-    def add_customer_fraud_prior(self):
-        n, fraud_sum = self._customer_fraud_history()
+    def add_customer_fraud_prior(self, label_mask=None):
+        """Ügyfél fraud-prior számítása; maszkolva csak a train címkéivel."""
+        if label_mask is None:
+            n, fraud_sum = self._customer_fraud_history()
+        else:
+            n, fraud_sum = self._fraud_history_masked(self.customer_col, label_mask)
         self.df["customer_fraud_prior"] = self._bayes_smooth(fraud_sum, n)
         return self
 
@@ -237,20 +251,30 @@ class FeatureEngineering:
     # ------------------------------------------------------------------
 
     def add_customer_category_diversity_hist(self):
-        seen_categories = set()
-        diversity = np.zeros(len(self.df), dtype=int)
-
-        # entitásonkénti (customer) futó egyedi-kategória-számlálás, step sorrendben
-        # (self.df már customer+step szerint rendezett a __init__-ben)
-        last_customer = None
-        for i, (cust, cat) in enumerate(zip(self.df[self.customer_col], self.df[self.category_col])):
-            if cust != last_customer:
-                seen_categories = set()
-                last_customer = cust
-            diversity[i] = len(seen_categories)
-            seen_categories.add(cat)
-
-        self.df["customer_category_diversity_hist"] = diversity
+        first_steps = (
+            self.df.groupby([self.customer_col, self.category_col])[self.step_col]
+            .transform("min")
+        )
+        first_category_steps = (
+            self.df[[self.customer_col, self.category_col]]
+            .assign(_first_step=first_steps)
+            .drop_duplicates([self.customer_col, self.category_col])
+            .groupby([self.customer_col, "_first_step"])
+            .size()
+            .rename("_new_categories")
+            .reset_index()
+        )
+        first_category_steps["_diversity"] = (
+            first_category_steps.groupby(self.customer_col)["_new_categories"].cumsum()
+            - first_category_steps["_new_categories"]
+        )
+        diversity = self.df[[self.customer_col, self.step_col]].merge(
+            first_category_steps[[self.customer_col, "_first_step", "_diversity"]]
+            .rename(columns={"_first_step": self.step_col}),
+            on=[self.customer_col, self.step_col],
+            how="left",
+        )["_diversity"]
+        self.df["customer_category_diversity_hist"] = diversity.to_numpy(dtype=int)
         return self
 
     # ------------------------------------------------------------------
@@ -258,20 +282,12 @@ class FeatureEngineering:
     # ------------------------------------------------------------------
 
     def add_is_new_category_for_customer(self):
-        if "customer_category_diversity_hist" not in self.df.columns:
-            self.add_customer_category_diversity_hist()
-
-        seen = set()
-        is_new = np.zeros(len(self.df), dtype=int)
-        last_customer = None
-        for i, (cust, cat) in enumerate(zip(self.df[self.customer_col], self.df[self.category_col])):
-            if cust != last_customer:
-                seen = set()
-                last_customer = cust
-            is_new[i] = int(cat not in seen)
-            seen.add(cat)
-
-        self.df["is_new_category_for_customer"] = is_new
+        first_steps = self.df.groupby(
+            [self.customer_col, self.category_col]
+        )[self.step_col].transform("min")
+        self.df["is_new_category_for_customer"] = (
+            self.df[self.step_col] == first_steps
+        ).astype(int)
         return self
 
     # ------------------------------------------------------------------
@@ -286,8 +302,12 @@ class FeatureEngineering:
         self.df = self.df.drop(columns=["_ones"])
         return n, fraud_sum
 
-    def add_merchant_fraud_prior(self):
-        n, fraud_sum = self._merchant_fraud_history()
+    def add_merchant_fraud_prior(self, label_mask=None):
+        """Kereskedői fraud-prior számítása; maszkolva csak a train címkéivel."""
+        if label_mask is None:
+            n, fraud_sum = self._merchant_fraud_history()
+        else:
+            n, fraud_sum = self._fraud_history_masked(self.merchant_col, label_mask)
         self.df["merchant_fraud_prior"] = self._bayes_smooth(fraud_sum, n)
         return self
 
@@ -310,8 +330,12 @@ class FeatureEngineering:
         self.df = self.df.drop(columns=["_ones"])
         return n, fraud_sum
 
-    def add_category_fraud_prior(self):
-        n, fraud_sum = self._category_fraud_history()
+    def add_category_fraud_prior(self, label_mask=None):
+        """Kategória fraud-prior számítása; maszkolva csak a train címkéivel."""
+        if label_mask is None:
+            n, fraud_sum = self._category_fraud_history()
+        else:
+            n, fraud_sum = self._fraud_history_masked(self.category_col, label_mask)
         self.df["category_fraud_prior"] = self._bayes_smooth(fraud_sum, n)
         return self
 
@@ -342,30 +366,28 @@ class FeatureEngineering:
 
     def _tx_count_last_n_days(self, window):
         self.df["_ones"] = 1
-        daily = (
-            self.df.groupby([self.customer_col, self.step_col])["_ones"]
-            .sum()
-            .reset_index()
-            .sort_values([self.customer_col, self.step_col], kind="mergesort")
-        )
-
         col_name = f"tx_count_last_{window}d"
-        rolling_vals = (
-            daily.groupby(self.customer_col)["_ones"]
-            .apply(lambda s: s.rolling(window=window, min_periods=1).sum().shift(1).fillna(0.0))
-            .reset_index(level=0, drop=True)
+        self.df[col_name] = (
+            self._rolling_calendar_sum("_ones", window).round().astype(int)
         )
-        daily[col_name] = rolling_vals.values
-
-        merged = self.df[[self.customer_col, self.step_col]].merge(
-            daily[[self.customer_col, self.step_col, col_name]],
-            on=[self.customer_col, self.step_col],
-            how="left",
-        )
-        self.df[col_name] = merged[col_name].fillna(0.0).astype(int).values
-
         self.df = self.df.drop(columns=["_ones"])
         return self
+
+    def _rolling_calendar_sum(self, value_col, window):
+        """Ügyfelenként az előző `window` naptári nap összege (a mai nap nélkül)."""
+        steps = range(int(self.df[self.step_col].min()), int(self.df[self.step_col].max()) + 1)
+        daily = (
+            self.df.groupby([self.customer_col, self.step_col])[value_col].sum()
+            .unstack(fill_value=0)
+            .reindex(columns=steps, fill_value=0)
+        )
+        rolled = daily.T.rolling(window, min_periods=1).sum().shift(1).fillna(0.0).T
+        rolled.columns.name = self.step_col
+        long = rolled.stack().rename("_val").reset_index()
+        merged = self.df[[self.customer_col, self.step_col]].merge(
+            long, on=[self.customer_col, self.step_col], how="left"
+        )
+        return merged["_val"].fillna(0.0).to_numpy()
 
     def add_tx_count_last_7d(self):
         return self._tx_count_last_n_days(7)
@@ -395,26 +417,9 @@ class FeatureEngineering:
     # ------------------------------------------------------------------
 
     def add_cumulative_spend_30d(self, window=30):
-        daily = (
-            self.df.groupby([self.customer_col, self.step_col])[self.amount_col]
-            .sum()
-            .reset_index()
-            .sort_values([self.customer_col, self.step_col], kind="mergesort")
+        self.df["cumulative_spend_30d"] = self._rolling_calendar_sum(
+            self.amount_col, window
         )
-
-        rolling_vals = (
-            daily.groupby(self.customer_col)[self.amount_col]
-            .apply(lambda s: s.rolling(window=window, min_periods=1).sum().shift(1).fillna(0.0))
-            .reset_index(level=0, drop=True)
-        )
-        daily["cumulative_spend_30d"] = rolling_vals.values
-
-        merged = self.df[[self.customer_col, self.step_col]].merge(
-            daily[[self.customer_col, self.step_col, "cumulative_spend_30d"]],
-            on=[self.customer_col, self.step_col],
-            how="left",
-        )
-        self.df["cumulative_spend_30d"] = merged["cumulative_spend_30d"].fillna(0.0).values
         return self
 
     # ------------------------------------------------------------------
@@ -484,25 +489,35 @@ class FeatureEngineering:
         KIZÁRÓLAG a train_df-ből számolja, hogy a val/test ne szivároghasson be.
 
         A fit-elt statisztikákkal utána a rájuk épülő oszlopokat a teljes
-        (self.df, azaz train+val+test) adatra adja hozzá -- a fraud_prior
-        oszlopok maga a history-számítás továbbra is a teljes idősoron,
-        entitásonként kauzális, csak a simítási konstans jön train-ről.
+        (self.df, azaz train+val+test) adatra adja hozzá. A fraud-priorok
+        history-jába kizárólag a train sorok címkéi kerülnek; a val/test
+        címkék nem befolyásolják a train-fit statisztikákat.
         """
+        if "_pipeline_row_id" in self.df.columns:
+            label_mask = self.df["_pipeline_row_id"].isin(
+                train_df["_pipeline_row_id"]
+            ).to_numpy()
+        elif split_name == "customer":
+            label_mask = self.df[self.customer_col].isin(
+                set(train_df[self.customer_col])
+            ).to_numpy()
+        else:
+            raise ValueError(
+                "A train címkék maszkolásához time split esetén "
+                "'_pipeline_row_id' oszlop szükséges."
+            )
+
         q1, q3 = train_df[self.amount_col].quantile([0.25, 0.75])
         iqr = q3 - q1
         self.amount_outlier_bounds = (q1 - 1.5 * iqr, q3 + 1.5 * iqr)
         self.global_fraud_prior = train_df[self.fraud_col].mean()
 
         print("=== Train-fit statisztikákra épülő feature engineering ===")
-        feature_methods = (
-            self.add_is_amount_outlier,
-            self.add_customer_fraud_prior,
-            self.add_merchant_fraud_prior,
-            self.add_category_fraud_prior,
-            self.add_risk_score_composite,
-        )
-        for add_feature in feature_methods:
-            add_feature()
+        self.add_is_amount_outlier()
+        self.add_customer_fraud_prior(label_mask=label_mask)
+        self.add_merchant_fraud_prior(label_mask=label_mask)
+        self.add_category_fraud_prior(label_mask=label_mask)
+        self.add_risk_score_composite()
         if split_name == "customer":
             return splitter.customer_split(self.df)
         elif split_name == "time":
@@ -513,6 +528,8 @@ class FeatureEngineering:
 if __name__ == "__main__":
     fe = FeatureEngineering(pd.read_csv(PROJECT_ROOT / "data" / "processed" / "dataset_cleaned.csv"))
     result_df = fe.add_dataset_wide_features()
-    result2_df = fe.fit_and_add_train_dependent_features(result_df[result_df["step"] < 100])
+    splitter = DataSplit(result_df)
+    train_df, _, _ = splitter.customer_split()
+    fe.fit_and_add_train_dependent_features(train_df, splitter, split_name="customer")
     print(result_df.shape)
     print(result_df.columns.tolist())

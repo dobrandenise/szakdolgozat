@@ -41,7 +41,13 @@ class DataSplit:
 
         df = self.df if df is None else df
 
-        customers = (df["customer"].drop_duplicates().sample(frac=1.0, random_state=self.random_state).reset_index(drop=True))
+        customers = (
+            df["customer"]
+            .drop_duplicates()
+            .sort_values()
+            .sample(frac=1.0, random_state=self.random_state)
+            .reset_index(drop=True)
+        )
 
         n = len(customers)
         n_train = int(n * self.train_ratio)
@@ -51,9 +57,9 @@ class DataSplit:
         val_customers = set(customers[n_train:n_train + n_val])
         test_customers = set(customers[n_train + n_val:])
 
-        train_df = df[df["customer"].isin(train_customers)].sort_values("step").reset_index(drop=True)
-        val_df = df[df["customer"].isin(val_customers)].sort_values("step").reset_index(drop=True)
-        test_df = df[df["customer"].isin(test_customers)].sort_values("step").reset_index(drop=True)
+        train_df = df[df["customer"].isin(train_customers)].sort_values("step", kind="stable").reset_index(drop=True)
+        val_df = df[df["customer"].isin(val_customers)].sort_values("step", kind="stable").reset_index(drop=True)
+        test_df = df[df["customer"].isin(test_customers)].sort_values("step", kind="stable").reset_index(drop=True)
 
         print(
             f"customer_split -> customerek: train={len(train_customers)}, "
@@ -62,6 +68,10 @@ class DataSplit:
         print(
             f"customer_split -> sorok: train={len(train_df)}, "
             f"val={len(val_df)}, test={len(test_df)}"
+        )
+        print(
+            f"customer_split -> fraud-arány: train={train_df['fraud'].mean():.4f}, "
+            f"val={val_df['fraud'].mean():.4f}, test={test_df['fraud'].mean():.4f}"
         )
 
         return train_df, val_df, test_df
@@ -74,7 +84,7 @@ class DataSplit:
         """
         print("=== Time split futtatása ===")
 
-        df = (self.df if df is None else df).sort_values("step").reset_index(drop=True)
+        df = (self.df if df is None else df).sort_values("step", kind="stable").reset_index(drop=True)
 
         n = len(df)
         n_train = int(n * self.train_ratio)
