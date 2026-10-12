@@ -251,30 +251,31 @@ class FeatureEngineering:
     # ------------------------------------------------------------------
 
     def add_customer_category_diversity_hist(self):
-        first_steps = (
+        """Az ügyfél által szigorúan korábbi napokon vásárolt egyedi kategóriák száma."""
+        first = (
             self.df.groupby([self.customer_col, self.category_col])[self.step_col]
-            .transform("min")
+            .min().rename("_first_step").reset_index()
         )
-        first_category_steps = (
-            self.df[[self.customer_col, self.category_col]]
-            .assign(_first_step=first_steps)
-            .drop_duplicates([self.customer_col, self.category_col])
-            .groupby([self.customer_col, "_first_step"])
-            .size()
-            .rename("_new_categories")
-            .reset_index()
+        seen = (
+            first.groupby([self.customer_col, "_first_step"]).size().rename("_new")
+            .reset_index().sort_values([self.customer_col, "_first_step"], kind="mergesort")
         )
-        first_category_steps["_diversity"] = (
-            first_category_steps.groupby(self.customer_col)["_new_categories"].cumsum()
-            - first_category_steps["_new_categories"]
+        seen["_seen_before"] = seen.groupby(self.customer_col)["_new"].cumsum()
+        left = (
+            self.df[[self.customer_col, self.step_col]]
+            .reset_index().sort_values(self.step_col, kind="mergesort")
         )
-        diversity = self.df[[self.customer_col, self.step_col]].merge(
-            first_category_steps[[self.customer_col, "_first_step", "_diversity"]]
-            .rename(columns={"_first_step": self.step_col}),
-            on=[self.customer_col, self.step_col],
-            how="left",
-        )["_diversity"]
-        self.df["customer_category_diversity_hist"] = diversity.to_numpy(dtype=int)
+        merged = pd.merge_asof(
+            left,
+            seen.sort_values("_first_step", kind="mergesort")[
+                [self.customer_col, "_first_step", "_seen_before"]
+            ],
+            left_on=self.step_col, right_on="_first_step", by=self.customer_col,
+            allow_exact_matches=False,   # csak a szigorúan korábbi napok
+        ).set_index("index").sort_index()
+        self.df["customer_category_diversity_hist"] = (
+            merged["_seen_before"].fillna(0).astype(int).to_numpy()
+        )
         return self
 
     # ------------------------------------------------------------------

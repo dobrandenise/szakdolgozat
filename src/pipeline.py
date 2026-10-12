@@ -27,20 +27,21 @@ RF_XGB_EXCLUDED_COLUMNS = [
     "customer_fraud_prior", "risk_score_composite",
 ]
 XGB_PARAMS = {
-	"n_estimators": 577,
-	"max_depth": 12,
-	"learning_rate": 0.022070435848525118,
-	"subsample": 0.9053079686928301,
-	"colsample_bytree": 0.6209063298688097,
+	"n_estimators": 747,
+	"max_depth": 10,
+	"learning_rate": 0.015613690158405065,
+	"subsample": 0.6387713040323718,
+	"colsample_bytree": 0.6680837435903048,
+    "reg_lambda": 5.142633483677166,
 	"random_state": 42,
 	"tree_method": "hist",
 	"device": "cuda",
 }
 RF_PARAMS = {
-	"n_estimators": 727,
-	"max_depth": 16,
-	"max_features": 0.45115101356959497,
-	"min_samples_leaf": 7,
+    'n_estimators': 593,
+    'max_depth': 16, 
+    'max_features': 0.48508241086548237, 
+    'min_samples_leaf': 5,
 	"random_state": 42,
 }
 
@@ -85,7 +86,7 @@ def _tune_probability_ensemble(
     y_val = np.asarray(y_val, dtype=np.int32)
     amounts_val = np.asarray(amounts_val, dtype=float)
     if thresholds is None:
-        thresholds = np.linspace(0.1, 0.8, 71)
+        thresholds = np.linspace(0.01, 0.99, 99)
 
     best_cost = float("inf")
     best_weight = None
@@ -93,7 +94,7 @@ def _tune_probability_ensemble(
     fraud_mask = y_val == 1
     non_fraud_mask = ~fraud_mask
 
-    for gnn_weight in np.linspace(0.0, 1.0, 21):
+    for gnn_weight in np.linspace(0.1, 1.0, 21):
         probabilities = (
             (1.0 - gnn_weight) * xgb_probabilities
             + gnn_weight * gnn_probabilities
@@ -183,7 +184,7 @@ def run_pipeline(input_path=RAW_DATA_PATH, model="XGB"):
         RF.fit(
             X_train=customer_train.drop(columns=RF_XGB_EXCLUDED_COLUMNS, errors="ignore"),
             y_train=customer_train["fraud"],
-            params=RF_PARAMS,
+            params=RF_PARAMS
         )
         threshold = RF.tune_threshold(
             X_val=customer_val.drop(columns=RF_XGB_EXCLUDED_COLUMNS, errors="ignore"),
@@ -200,10 +201,15 @@ def run_pipeline(input_path=RAW_DATA_PATH, model="XGB"):
     elif(model == "XGB"):
         print("---XGBoost modell---")
         XGB= XGBoostModel()
+        XGB.tune(X_train=customer_train.drop(columns=RF_XGB_EXCLUDED_COLUMNS, errors="ignore"),
+                y_train=customer_train["fraud"],
+                X_val=customer_val.drop(columns=RF_XGB_EXCLUDED_COLUMNS, errors="ignore"),
+                y_val=customer_val["fraud"]
+        )
         XGB.fit(
             X_train=customer_train.drop(columns=RF_XGB_EXCLUDED_COLUMNS, errors="ignore"),
             y_train=customer_train["fraud"],
-            params=XGB_PARAMS,
+            params=XGB_PARAMS
         )
         threshold = XGB.tune_threshold(
             X_val=customer_val.drop(columns=RF_XGB_EXCLUDED_COLUMNS, errors="ignore"),
@@ -219,7 +225,17 @@ def run_pipeline(input_path=RAW_DATA_PATH, model="XGB"):
         )
     elif(model == "GNN"):
         print("---GraphSAGE modell---")
-        GNN = GraphSAGEModel(eval_chunk_steps=1,pos_weight=40)
+        GNN = GraphSAGEModel(eval_chunk_steps=1,pos_weight="auto")
+        best_params = GNN.tune(train_df=graph_train, val_df=graph_val, n_trials=30)
+        GNN = GraphSAGEModel(
+            hidden_dim=best_params["hidden_dim"],
+            num_layers=best_params["num_layers"],
+            dropout=best_params["dropout"],
+            lr=best_params["lr"],
+            sup_batch_size=best_params["sup_batch_size"],
+            eval_chunk_steps=1,
+            pos_weight=best_params["pos_weight"],
+        )
         GNN.fit(train_df=graph_train, val_df=graph_val)
         threshold = GNN.tune_threshold(
             X_val=graph_val.drop(columns=["fraud"]),
