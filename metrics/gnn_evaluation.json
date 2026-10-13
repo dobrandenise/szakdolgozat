@@ -37,5 +37,44 @@
       "baseline_cost": 784218.94,
       "cost_savings": 0.9521689312936003
     }
+  },
+  {
+    "model_name": "GraphSAGEModel",
+    "timestamp": "2026-10-13T04:14:19+00:00",
+    "model_params": {
+      "hidden_dim": 64,
+      "num_layers": 2,
+      "dropout": 0.2890856026631795,
+      "lr": 0.0003017731896320215,
+      "sup_batch_size": 8192,
+      "pos_weight": 20,
+      "eval_chunk_steps": 1
+    },
+    "best_val_pr_auc": 0.9454247355461121,
+    "threshold": 0.85,
+    "n_test_samples": 120182,
+    "fraud_rate": 0.011881978998518913,
+    "AUC-ROC": 0.9980863928794861,
+    "AUC-PR": 0.8707689566555644,
+    "precision_fraud": 0.6061288868859847,
+    "accuracy": 0.9920370770997321,
+    "recall_fraud": 0.9418767507002801,
+    "f1_fraud": 0.7375925418151905,
+    "confusion_matrix": {
+      "tn": 117880,
+      "fp": 874,
+      "fn": 83,
+      "tp": 1345
+    },
+    "cost": {
+      "fp_cost": 10.0,
+      "tp_cost": 10.0,
+      "fn_multiplier": 1.0,
+      "threshold": 0.85,
+      "total_cost": 30973.760000000002,
+      "total_cost_at_0.5": 37405.36,
+      "baseline_cost": 784218.94,
+      "cost_savings": 0.9605036828108232
+    }
   }
 ]
