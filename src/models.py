@@ -36,7 +36,7 @@ FÜGGŐSÉGEK:
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -139,7 +139,7 @@ def find_optimal_threshold(y_true, y_proba, amounts, fp_cost=10.0, tp_cost=10.0,
                            fn_multiplier=1.0, thresholds=None):
     """Azt a küszöböt keresi, amelyiknél a teljes költség minimális."""
     if thresholds is None:
-        thresholds = np.linspace(0.1, 0.8, 69)
+        thresholds = np.linspace(0.01, 0.99, 99)
     y_proba = cp.asnumpy(_to_cupy(y_proba))
 
     costs = np.array([
@@ -179,7 +179,6 @@ class RandomForestModel:
                 "max_depth": trial.suggest_int("max_depth", 4, 24),
                 "max_features": trial.suggest_float("max_features", 0.2, 1.0),
                 "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 20),
-                "class_weight": trial.suggest_categorical("class_weight", ["balanced", None]),
                 "random_state": self.random_state,
             }
             clf = CuMLRandomForestClassifier(**params)
@@ -196,7 +195,6 @@ class RandomForestModel:
         params = params or self.best_params or {
             "n_estimators": 400,
             "max_depth": 12,
-            "class_weight": "balanced",
             "random_state": self.random_state,
         }
         self.model = CuMLRandomForestClassifier(**params)
@@ -236,7 +234,7 @@ class RandomForestModel:
         
         metrics = {
             "model_name": model_name,
-            "timestamp": datetime.now().isoformat(timespec="seconds") + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "model_params": self.model.get_params(),
             "best_params": self.best_params,
             "threshold": threshold,
@@ -315,7 +313,7 @@ class XGBoostModel:
         self.tp_cost = tp_cost
         self.fn_multiplier = fn_multiplier
  
-    def tune(self, X_train, y_train, X_val, y_val, n_trials: int = 50) -> dict:
+    def tune(self, X_train, y_train, X_val, y_val, n_trials: int = 100) -> dict:
         import optuna
  
         def objective(trial: "optuna.Trial") -> float:
@@ -400,7 +398,7 @@ class XGBoostModel:
 
         metrics = {
             "model_name": model_name,
-            "timestamp": datetime.now().isoformat(timespec="seconds") + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "model_params": self.model.get_params(),
             "best_params": self.best_params,
             "threshold": threshold,
@@ -788,6 +786,45 @@ class GraphSAGEModel:
     # Tanítás
     # ------------------------------------------------------------------
 
+    def tune(self, train_df: pd.DataFrame, val_df: pd.DataFrame, n_trials: int = 20):
+        import optuna
+        from sklearn.metrics import average_precision_score
+
+        def objective(trial: "optuna.Trial") -> float:
+            params = {
+                "hidden_dim": trial.suggest_categorical("hidden_dim", [32, 64, 128]),
+                "num_layers": trial.suggest_categorical("num_layers", [2, 3, 4]),
+                "dropout": trial.suggest_float("dropout", 0.1, 0.5),
+                "lr": trial.suggest_float("lr", 1e-4, 5e-4, log=True),
+                "sup_batch_size": trial.suggest_categorical("sup_batch_size", [4096, 8192, 16384]),
+                "pos_weight": trial.suggest_categorical("pos_weight", ["auto", 20, 40, 60]),
+            }
+
+            model = GraphSAGEModel(
+                hidden_dim=params["hidden_dim"],
+                num_layers=params["num_layers"],
+                dropout=params["dropout"],
+                lr=params["lr"],
+                sup_batch_size=params["sup_batch_size"],
+                pos_weight=params["pos_weight"],
+                eval_chunk_steps=1,
+                random_state=self.random_state,
+                fp_cost=self.fp_cost,
+                tp_cost=self.tp_cost,
+                fn_multiplier=self.fn_multiplier,
+            )
+
+            model.fit(train_df=train_df, val_df=val_df, epochs=60, patience=8)
+
+            val_proba = model.predict_proba(val_df, context_df="train")
+            return average_precision_score(val_df["fraud"], val_proba)
+
+        study = optuna.create_study(direction="maximize", sampler=optuna.samplers.TPESampler(seed=self.random_state))
+        study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
+
+        self.best_params = study.best_params
+        return study.best_params
+
     def fit(self, train_df: pd.DataFrame, val_df: pd.DataFrame,
             epochs: int = 100, patience: int = 8) -> "GraphSAGEModel":
         import torch
@@ -966,7 +1003,7 @@ class GraphSAGEModel:
         }
         metrics = {
             "model_name": model_name,
-            "timestamp": datetime.now().isoformat(timespec="seconds") + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "model_params": model_params,
             "best_val_pr_auc": self.best_val_pr_auc,
             "threshold": threshold,

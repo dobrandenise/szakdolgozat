@@ -1,14 +1,13 @@
 from pathlib import Path
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 import cupy as cp
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import OrdinalEncoder
 
-from clustering import Clusterer
 from feature_engineering import FeatureEngineering
 from models import (
     GraphSAGEModel,
@@ -23,23 +22,26 @@ from data_split import DataSplit
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 RAW_DATA_PATH = PROJECT_ROOT / "data" / "raw" / "BankSim.csv"
-CLEANED_DATA_PATH = PROJECT_ROOT / "data" / "processed" / "BankSim_cleaned.csv"
-FEATURED_DATA_PATH = PROJECT_ROOT / "data" / "processed" / "BankSim_featured.csv"
+RF_XGB_EXCLUDED_COLUMNS = [
+    "fraud", "_pipeline_row_id", "customer",
+    "customer_fraud_prior", "risk_score_composite",
+]
 XGB_PARAMS = {
-	"n_estimators": 577,
-	"max_depth": 12,
-	"learning_rate": 0.022070435848525118,
-	"subsample": 0.9053079686928301,
-	"colsample_bytree": 0.6209063298688097,
+	"n_estimators": 747,
+	"max_depth": 10,
+	"learning_rate": 0.015613690158405065,
+	"subsample": 0.6387713040323718,
+	"colsample_bytree": 0.6680837435903048,
+    "reg_lambda": 5.142633483677166,
 	"random_state": 42,
 	"tree_method": "hist",
 	"device": "cuda",
 }
 RF_PARAMS = {
-	"n_estimators": 727,
-	"max_depth": 16,
-	"max_features": 0.45115101356959497,
-	"min_samples_leaf": 7,
+    'n_estimators': 593,
+    'max_depth': 16, 
+    'max_features': 0.48508241086548237, 
+    'min_samples_leaf': 5,
 	"random_state": 42,
 }
 
@@ -84,7 +86,7 @@ def _tune_probability_ensemble(
     y_val = np.asarray(y_val, dtype=np.int32)
     amounts_val = np.asarray(amounts_val, dtype=float)
     if thresholds is None:
-        thresholds = np.linspace(0.1, 0.8, 69)
+        thresholds = np.linspace(0.01, 0.99, 99)
 
     best_cost = float("inf")
     best_weight = None
@@ -92,7 +94,7 @@ def _tune_probability_ensemble(
     fraud_mask = y_val == 1
     non_fraud_mask = ~fraud_mask
 
-    for gnn_weight in np.linspace(0.0, 1.0, 21):
+    for gnn_weight in np.linspace(0.1, 1.0, 21):
         probabilities = (
             (1.0 - gnn_weight) * xgb_probabilities
             + gnn_weight * gnn_probabilities
@@ -112,23 +114,27 @@ def _tune_probability_ensemble(
     return best_weight, best_threshold
 
 
-def encode_categoricals(df: pd.DataFrame) -> pd.DataFrame:
+def encode_categoricals(
+    train: pd.DataFrame, val: pd.DataFrame, test: pd.DataFrame
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     categorical_cols = [
-        col for col in ["age", "gender", "category", "merchant", "customer"]
-        if col in df.columns
+        col for col in ["age", "gender", "category", "merchant"]
+        if col in train.columns
     ]
+    encoded_frames = [train.copy(), val.copy(), test.copy()]
     if not categorical_cols:
-        return df.copy()
+        return tuple(encoded_frames)
 
     encoder = OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1)
-    encoded_df = df.copy()
-    encoded_df[categorical_cols] = encoder.fit_transform(encoded_df[categorical_cols])
-    return encoded_df
+    encoder.fit(train[categorical_cols])
+    for source, encoded in zip((train, val, test), encoded_frames):
+        encoded[categorical_cols] = encoder.transform(source[categorical_cols])
+    return tuple(encoded_frames)
 
 def run_pipeline(input_path=RAW_DATA_PATH, model="XGB"):
-    """Run preprocessing, feature engineering, data splitting and clustering in order."""
+    """Előfeldolgozza, feature-özi, felosztja és modellezi az adatokat."""
     
-    preprocessor = Preprocessor(input_path=RAW_DATA_PATH)
+    preprocessor = Preprocessor(input_path=input_path)
     cleaned_df = preprocessor.run()
 
     fe = FeatureEngineering(cleaned_df)
@@ -154,31 +160,39 @@ def run_pipeline(input_path=RAW_DATA_PATH, model="XGB"):
     }
 
     customer_df = pd.concat([customer_train, customer_val, customer_test], ignore_index=True)
-    #time_df = pd.concat([time_train, time_val, time_test], ignore_index=True)
 
-    customer_df = encode_categoricals(customer_df)
-    #time_df = encode_categoricals(time_df)
+    def _subset(df, ids_df):
+        return (
+            df[df[ensemble_id_column].isin(ids_df[ensemble_id_column])]
+            .sort_values(ensemble_id_column)
+            .reset_index(drop=True)
+        )
 
-    data_customer_splitter = DataSplit(customer_df)
-    customer_train, customer_val, customer_test = data_customer_splitter.customer_split()
-    #data_time_splitter = DataSplit(time_df)
-    #time_train, time_val, time_test = data_time_splitter.time_split()
+    customer_train = _subset(customer_df, raw_split["train"])
+    customer_val = _subset(customer_df, raw_split["val"])
+    customer_test = _subset(customer_df, raw_split["test"])
+    assert len(customer_train) == len(raw_split["train"])
+    assert len(customer_val) == len(raw_split["val"])
+    assert len(customer_test) == len(raw_split["test"])
+    customer_train, customer_val, customer_test = encode_categoricals(
+        customer_train, customer_val, customer_test
+    )
 
     if(model == "RF"):
         print("---RandomForest modell---")
         RF = RandomForestModel()
         RF.fit(
-            X_train=customer_train.drop(columns=["fraud"]),
+            X_train=customer_train.drop(columns=RF_XGB_EXCLUDED_COLUMNS, errors="ignore"),
             y_train=customer_train["fraud"],
-            params=RF_PARAMS,
+            params=RF_PARAMS
         )
         threshold = RF.tune_threshold(
-            X_val=customer_val.drop(columns=["fraud"]),
+            X_val=customer_val.drop(columns=RF_XGB_EXCLUDED_COLUMNS, errors="ignore"),
             y_val=customer_val["fraud"],
             amounts_val=customer_val["amount"],
         )
         RF.evaluate(
-            X_test=customer_test.drop(columns=["fraud"]),
+            X_test=customer_test.drop(columns=RF_XGB_EXCLUDED_COLUMNS, errors="ignore"),
             y_test=customer_test["fraud"],
             amounts_test=customer_test["amount"],
             threshold=threshold,
@@ -187,18 +201,23 @@ def run_pipeline(input_path=RAW_DATA_PATH, model="XGB"):
     elif(model == "XGB"):
         print("---XGBoost modell---")
         XGB= XGBoostModel()
+        XGB.tune(X_train=customer_train.drop(columns=RF_XGB_EXCLUDED_COLUMNS, errors="ignore"),
+                y_train=customer_train["fraud"],
+                X_val=customer_val.drop(columns=RF_XGB_EXCLUDED_COLUMNS, errors="ignore"),
+                y_val=customer_val["fraud"]
+        )
         XGB.fit(
-            X_train=customer_train.drop(columns=["fraud"]),
+            X_train=customer_train.drop(columns=RF_XGB_EXCLUDED_COLUMNS, errors="ignore"),
             y_train=customer_train["fraud"],
-            params=XGB_PARAMS,
+            params=XGB_PARAMS
         )
         threshold = XGB.tune_threshold(
-            X_val=customer_val.drop(columns=["fraud"]),
+            X_val=customer_val.drop(columns=RF_XGB_EXCLUDED_COLUMNS, errors="ignore"),
             y_val=customer_val["fraud"],
             amounts_val=customer_val["amount"],
         )
         XGB.evaluate(
-            X_test=customer_test.drop(columns=["fraud"]),
+            X_test=customer_test.drop(columns=RF_XGB_EXCLUDED_COLUMNS, errors="ignore"),
             y_test=customer_test["fraud"],
             amounts_test=customer_test["amount"],
             save_path=PROJECT_ROOT / "metrics" / "xgb_evaluation.json",
@@ -206,7 +225,17 @@ def run_pipeline(input_path=RAW_DATA_PATH, model="XGB"):
         )
     elif(model == "GNN"):
         print("---GraphSAGE modell---")
-        GNN = GraphSAGEModel(eval_chunk_steps=1,pos_weight=40)
+        GNN = GraphSAGEModel(eval_chunk_steps=1,pos_weight="auto")
+        best_params = GNN.tune(train_df=graph_train, val_df=graph_val, n_trials=30)
+        GNN = GraphSAGEModel(
+            hidden_dim=best_params["hidden_dim"],
+            num_layers=best_params["num_layers"],
+            dropout=best_params["dropout"],
+            lr=best_params["lr"],
+            sup_batch_size=best_params["sup_batch_size"],
+            eval_chunk_steps=1,
+            pos_weight=best_params["pos_weight"],
+        )
         GNN.fit(train_df=graph_train, val_df=graph_val)
         threshold = GNN.tune_threshold(
             X_val=graph_val.drop(columns=["fraud"]),
@@ -227,30 +256,41 @@ def run_pipeline(input_path=RAW_DATA_PATH, model="XGB"):
         )
     elif(model == "HYBRID"):
         print("---XGBoost + GraphSAGE hibrid modell---")
-        xgb_excluded_columns = ["fraud", ensemble_id_column]
-        xgb_train = customer_df[customer_df[ensemble_id_column].isin(raw_split["train"][ensemble_id_column])].copy()
-        xgb_val = customer_df[customer_df[ensemble_id_column].isin(raw_split["val"][ensemble_id_column])].copy()
-        xgb_test = customer_df[customer_df[ensemble_id_column].isin(raw_split["test"][ensemble_id_column])].copy()
-        xgb_train = xgb_train.sort_values(ensemble_id_column).reset_index(drop=True)
-        xgb_val = xgb_val.sort_values(ensemble_id_column).reset_index(drop=True)
-        xgb_test = xgb_test.sort_values(ensemble_id_column).reset_index(drop=True)
-
         XGB = XGBoostModel()
         XGB.fit(
-            X_train=xgb_train.drop(columns=xgb_excluded_columns),
-            y_train=xgb_train["fraud"],
+            X_train=customer_train.drop(columns=RF_XGB_EXCLUDED_COLUMNS, errors="ignore"),
+            y_train=customer_train["fraud"],
             params=XGB_PARAMS,
         )
 
-        GNN = GraphSAGEModel(eval_chunk_steps=1, pos_weight=40)
+        GNN = GraphSAGEModel(
+            hidden_dim=64,
+            num_layers=2,
+            dropout=0.2890856026631795,
+            lr=0.0003017731896320215,
+            sup_batch_size=8192,
+            pos_weight=20,
+            eval_chunk_steps=1
+        )
         GNN.fit(train_df=graph_train, val_df=graph_val)
 
         xgb_val_probabilities = cp.asnumpy(
-            XGB.predict_proba(xgb_val.drop(columns=xgb_excluded_columns))
+            XGB.predict_proba(
+                customer_val.drop(columns=RF_XGB_EXCLUDED_COLUMNS, errors="ignore")
+            )
         )
         gnn_val_probabilities = GNN.predict_proba(
             graph_val.drop(columns=["fraud"]),
             context_df="train",
+        )
+        gnn_val_probabilities = np.asarray(gnn_val_probabilities).reshape(-1)
+        if not np.array_equal(
+            _align_rows(graph_val, customer_val, ensemble_id_column)["fraud"].to_numpy(),
+            graph_val["fraud"].to_numpy(),
+        ):
+            raise ValueError("A hibrid validációs címkék sorrendje nem egyezik.")
+        xgb_val_probabilities = _align_probabilities(
+            graph_val, customer_val, xgb_val_probabilities, ensemble_id_column
         )
         gnn_weight, threshold = _tune_probability_ensemble(
             y_val=graph_val["fraud"],
@@ -260,7 +300,9 @@ def run_pipeline(input_path=RAW_DATA_PATH, model="XGB"):
         )
 
         xgb_test_probabilities = cp.asnumpy(
-            XGB.predict_proba(xgb_test.drop(columns=xgb_excluded_columns))
+            XGB.predict_proba(
+                customer_test.drop(columns=RF_XGB_EXCLUDED_COLUMNS, errors="ignore")
+            )
         )
         test_context = pd.concat(
             [graph_train.drop(columns=["fraud"]), graph_val.drop(columns=["fraud"])],
@@ -269,6 +311,15 @@ def run_pipeline(input_path=RAW_DATA_PATH, model="XGB"):
         gnn_test_probabilities = GNN.predict_proba(
             graph_test.drop(columns=["fraud"]),
             context_df=test_context,
+        )
+        gnn_test_probabilities = np.asarray(gnn_test_probabilities).reshape(-1)
+        if not np.array_equal(
+            _align_rows(graph_test, customer_test, ensemble_id_column)["fraud"].to_numpy(),
+            graph_test["fraud"].to_numpy(),
+        ):
+            raise ValueError("A hibrid tesztcímkék sorrendje nem egyezik.")
+        xgb_test_probabilities = _align_probabilities(
+            graph_test, customer_test, xgb_test_probabilities, ensemble_id_column
         )
         test_probabilities = (
             (1.0 - gnn_weight) * xgb_test_probabilities
@@ -292,7 +343,7 @@ def run_pipeline(input_path=RAW_DATA_PATH, model="XGB"):
         )
         metrics = {
             "model_name": "XGBoostGraphSAGEEnsemble",
-            "timestamp": datetime.now().isoformat(timespec="seconds") + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "model_params": {
                 "xgboost": XGB_PARAMS,
                 "graphsage": {
@@ -347,17 +398,7 @@ def run_pipeline(input_path=RAW_DATA_PATH, model="XGB"):
         print(f"A hibrid modell eredménye elmentve ide: {results_path}")
     else:
         raise ValueError("A MODEL értéke csak RF, XGB, GNN vagy HYBRID lehet.")
-    """
-    customer_train_path = PROJECT_ROOT / "data" / "processed" / "dataset_customer_split_train.csv"
-    time_train_path = PROJECT_ROOT / "data" / "processed" / "dataset_time_split_train.csv"
-    customer_train.to_csv(customer_train_path, index=False)
-    time_train.to_csv(time_train_path, index=False)
-    customer_test_path = PROJECT_ROOT / "data" / "processed" / "dataset_customer_split_test.csv"
-    time_test_path = PROJECT_ROOT / "data" / "processed" / "dataset_time_split_test.csv"
-    customer_test.to_csv(customer_test_path, index=False)
-    time_test.to_csv(time_test_path, index=False)
-    """
-    print(f"Pipeline futtatva. Tisztított adat elmentve.")
+    print("Pipeline futtatva.")
 
 
 if __name__ == "__main__":
