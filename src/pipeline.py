@@ -263,7 +263,15 @@ def run_pipeline(input_path=RAW_DATA_PATH, model="XGB"):
             params=XGB_PARAMS,
         )
 
-        GNN = GraphSAGEModel(eval_chunk_steps=1, pos_weight=40)
+        GNN = GraphSAGEModel(
+            hidden_dim=64,
+            num_layers=2,
+            dropout=0.2890856026631795,
+            lr=0.0003017731896320215,
+            sup_batch_size=8192,
+            pos_weight=20,
+            eval_chunk_steps=1
+        )
         GNN.fit(train_df=graph_train, val_df=graph_val)
 
         xgb_val_probabilities = cp.asnumpy(
