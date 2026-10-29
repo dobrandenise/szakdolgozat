@@ -1,6 +1,8 @@
 from pathlib import Path
 import os
 import json
+import statistics
+import time
 from datetime import datetime, timezone
 
 import cupy as cp
@@ -13,6 +15,7 @@ from models import (
     GraphSAGEModel,
     RandomForestModel,
     XGBoostModel,
+    _synchronize_accelerators,
     classification_metrics,
     compute_cost,
 )
@@ -44,6 +47,21 @@ RF_PARAMS = {
     'min_samples_leaf': 5,
 	"random_state": 42,
 }
+GNN_PARAMS = {
+    "hidden_dim": 64,
+    "num_layers": 2,
+    "dropout": 0.2890856026631795,
+    "lr": 0.0003017731896320215,
+    "sup_batch_size": 8192,
+    "pos_weight": 20,
+    "eval_chunk_steps": 1
+}
+RF_THRESHOLD = 0.1
+XGB_THRESHOLD = 0.36
+GNN_THRESHOLD = 0.85
+HYBRID_GNN_WEIGHT = 0.415
+HYBRID_THRESHOLD = 0.53
+MODEL_REPEAT_COUNT = 10
 
 
 def _align_probabilities(reference_df, scored_df, probabilities, id_column):
@@ -76,44 +94,6 @@ def _align_rows(reference_df, rows_df, id_column):
     return rows_df.iloc[positions].reset_index(drop=True)
 
 
-def _tune_probability_ensemble(
-    y_val,
-    amounts_val,
-    xgb_probabilities,
-    gnn_probabilities,
-    thresholds=None,
-):
-    y_val = np.asarray(y_val, dtype=np.int32)
-    amounts_val = np.asarray(amounts_val, dtype=float)
-    if thresholds is None:
-        thresholds = np.linspace(0.01, 0.99, 99)
-
-    best_cost = float("inf")
-    best_weight = None
-    best_threshold = None
-    fraud_mask = y_val == 1
-    non_fraud_mask = ~fraud_mask
-
-    for gnn_weight in np.linspace(0.1, 1.0, 21):
-        probabilities = (
-            (1.0 - gnn_weight) * xgb_probabilities
-            + gnn_weight * gnn_probabilities
-        )
-        predictions = probabilities[:, None] >= thresholds[None, :]
-        costs = (
-            (amounts_val[:, None] * (fraud_mask[:, None] & ~predictions)).sum(axis=0)
-            + 10.0 * (non_fraud_mask[:, None] & predictions).sum(axis=0)
-            + 10.0 * (fraud_mask[:, None] & predictions).sum(axis=0)
-        )
-        threshold_idx = int(np.argmin(costs))
-        if costs[threshold_idx] < best_cost:
-            best_cost = float(costs[threshold_idx])
-            best_weight = float(gnn_weight)
-            best_threshold = float(thresholds[threshold_idx])
-
-    return best_weight, best_threshold
-
-
 def encode_categoricals(
     train: pd.DataFrame, val: pd.DataFrame, test: pd.DataFrame
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -131,9 +111,10 @@ def encode_categoricals(
         encoded[categorical_cols] = encoder.transform(source[categorical_cols])
     return tuple(encoded_frames)
 
-def run_pipeline(input_path=RAW_DATA_PATH, model="XGB"):
+def run_pipeline(input_path=RAW_DATA_PATH, model="XGB", run_number=None, run_group=None):
     """Előfeldolgozza, feature-özi, felosztja és modellezi az adatokat."""
-    
+
+    pipeline_started = time.perf_counter()
     preprocessor = Preprocessor(input_path=input_path)
     cleaned_df = preprocessor.run()
 
@@ -144,11 +125,9 @@ def run_pipeline(input_path=RAW_DATA_PATH, model="XGB"):
 
     data_splitter = DataSplit(dataset_wide_df)
     customer_train, customer_val, customer_test = data_splitter.customer_split()
-    #time_train, time_val, time_test = data_splitter.time_split()
 
     fe_wide = FeatureEngineering(dataset_wide_df)
     customer_train, customer_val, customer_test = fe_wide.fit_and_add_train_dependent_features(customer_train, data_splitter, split_name="customer")
-    #time_train, time_val, time_test = fe_wide.fit_and_add_train_dependent_features(time_train, data_splitter, split_name="time")
 
     graph_train, graph_val, graph_test = (
         customer_train.copy(), customer_val.copy(), customer_test.copy()
@@ -177,141 +156,141 @@ def run_pipeline(input_path=RAW_DATA_PATH, model="XGB"):
     customer_train, customer_val, customer_test = encode_categoricals(
         customer_train, customer_val, customer_test
     )
+    preprocessing_seconds = time.perf_counter() - pipeline_started
+    hyperparameter_tuning_seconds = 0.0
+    training_seconds = 0.0
+    threshold_tuning_seconds = 0.0
+    inference_by_model_seconds = None
+    training_by_model_seconds = None
 
     if(model == "RF"):
         print("---RandomForest modell---")
         RF = RandomForestModel()
+        _synchronize_accelerators()
+        training_started = time.perf_counter()
         RF.fit(
             X_train=customer_train.drop(columns=RF_XGB_EXCLUDED_COLUMNS, errors="ignore"),
             y_train=customer_train["fraud"],
-            params=RF_PARAMS
+            params=RF_PARAMS,
         )
-        threshold = RF.tune_threshold(
-            X_val=customer_val.drop(columns=RF_XGB_EXCLUDED_COLUMNS, errors="ignore"),
-            y_val=customer_val["fraud"],
-            amounts_val=customer_val["amount"],
-        )
-        RF.evaluate(
+        _synchronize_accelerators()
+        training_seconds = time.perf_counter() - training_started
+        result = RF.evaluate(
             X_test=customer_test.drop(columns=RF_XGB_EXCLUDED_COLUMNS, errors="ignore"),
             y_test=customer_test["fraud"],
             amounts_test=customer_test["amount"],
-            threshold=threshold,
-            save_path=PROJECT_ROOT / "metrics" / "rf_evaluation.json",
+            threshold=RF_THRESHOLD,
         )
+        results_path = PROJECT_ROOT / "metrics" / "rf_evaluation.json"
     elif(model == "XGB"):
         print("---XGBoost modell---")
-        XGB= XGBoostModel()
-        XGB.tune(X_train=customer_train.drop(columns=RF_XGB_EXCLUDED_COLUMNS, errors="ignore"),
-                y_train=customer_train["fraud"],
-                X_val=customer_val.drop(columns=RF_XGB_EXCLUDED_COLUMNS, errors="ignore"),
-                y_val=customer_val["fraud"]
-        )
+        XGB = XGBoostModel()
+        _synchronize_accelerators()
+        training_started = time.perf_counter()
         XGB.fit(
             X_train=customer_train.drop(columns=RF_XGB_EXCLUDED_COLUMNS, errors="ignore"),
             y_train=customer_train["fraud"],
             params=XGB_PARAMS
         )
-        threshold = XGB.tune_threshold(
-            X_val=customer_val.drop(columns=RF_XGB_EXCLUDED_COLUMNS, errors="ignore"),
-            y_val=customer_val["fraud"],
-            amounts_val=customer_val["amount"],
-        )
-        XGB.evaluate(
+        _synchronize_accelerators()
+        training_seconds = time.perf_counter() - training_started
+        result = XGB.evaluate(
             X_test=customer_test.drop(columns=RF_XGB_EXCLUDED_COLUMNS, errors="ignore"),
             y_test=customer_test["fraud"],
             amounts_test=customer_test["amount"],
-            save_path=PROJECT_ROOT / "metrics" / "xgb_evaluation.json",
-            threshold=threshold,
+            threshold=XGB_THRESHOLD,
         )
+        results_path = PROJECT_ROOT / "metrics" / "xgb_evaluation.json"
     elif(model == "GNN"):
         print("---GraphSAGE modell---")
-        GNN = GraphSAGEModel(eval_chunk_steps=1,pos_weight="auto")
-        best_params = GNN.tune(train_df=graph_train, val_df=graph_val, n_trials=30)
+
         GNN = GraphSAGEModel(
-            hidden_dim=best_params["hidden_dim"],
-            num_layers=best_params["num_layers"],
-            dropout=best_params["dropout"],
-            lr=best_params["lr"],
-            sup_batch_size=best_params["sup_batch_size"],
-            eval_chunk_steps=1,
-            pos_weight=best_params["pos_weight"],
+            hidden_dim=GNN_PARAMS["hidden_dim"],
+            num_layers=GNN_PARAMS["num_layers"],
+            dropout=GNN_PARAMS["dropout"],
+            lr=GNN_PARAMS["lr"],
+            sup_batch_size=GNN_PARAMS["sup_batch_size"],
+            eval_chunk_steps=GNN_PARAMS["eval_chunk_steps"],
+            pos_weight=GNN_PARAMS["pos_weight"],
         )
+        _synchronize_accelerators()
+        training_started = time.perf_counter()
         GNN.fit(train_df=graph_train, val_df=graph_val)
-        threshold = GNN.tune_threshold(
-            X_val=graph_val.drop(columns=["fraud"]),
-            y_val=graph_val["fraud"],
-            amounts_val=graph_val["amount"],
-        )
+        _synchronize_accelerators()
+        gnn_fit_seconds = time.perf_counter() - training_started
+        preprocessing_seconds += GNN.preprocessing_seconds
+        training_seconds = gnn_fit_seconds - GNN.preprocessing_seconds
         test_context = pd.concat(
             [graph_train.drop(columns=["fraud"]), graph_val.drop(columns=["fraud"])],
             ignore_index=True,
         )
-        GNN.evaluate(
+        result = GNN.evaluate(
             X_test=graph_test.drop(columns=["fraud"]),
             y_test=graph_test["fraud"],
             amounts_test=graph_test["amount"],
-            threshold=threshold,
+            threshold=GNN_THRESHOLD,
             context_df=test_context,
-            save_path=PROJECT_ROOT / "metrics" / "gnn_evaluation.json",
         )
+        results_path = PROJECT_ROOT / "metrics" / "gnn_evaluation.json"
     elif(model == "HYBRID"):
         print("---XGBoost + GraphSAGE hibrid modell---")
         XGB = XGBoostModel()
+        _synchronize_accelerators()
+        xgb_training_started = time.perf_counter()
         XGB.fit(
             X_train=customer_train.drop(columns=RF_XGB_EXCLUDED_COLUMNS, errors="ignore"),
             y_train=customer_train["fraud"],
             params=XGB_PARAMS,
         )
+        _synchronize_accelerators()
+        xgb_training_seconds = time.perf_counter() - xgb_training_started
 
         GNN = GraphSAGEModel(
-            hidden_dim=64,
-            num_layers=2,
-            dropout=0.2890856026631795,
-            lr=0.0003017731896320215,
-            sup_batch_size=8192,
-            pos_weight=20,
-            eval_chunk_steps=1
+            hidden_dim=GNN_PARAMS["hidden_dim"],
+            num_layers=GNN_PARAMS["num_layers"],
+            dropout=GNN_PARAMS["dropout"],
+            lr=GNN_PARAMS["lr"],
+            sup_batch_size=GNN_PARAMS["sup_batch_size"],
+            pos_weight=GNN_PARAMS["pos_weight"],
+            eval_chunk_steps=GNN_PARAMS["eval_chunk_steps"]
         )
+        _synchronize_accelerators()
+        gnn_training_started = time.perf_counter()
         GNN.fit(train_df=graph_train, val_df=graph_val)
+        _synchronize_accelerators()
+        gnn_fit_seconds = time.perf_counter() - gnn_training_started
+        preprocessing_seconds += GNN.preprocessing_seconds
+        gnn_training_seconds = gnn_fit_seconds - GNN.preprocessing_seconds
+        training_seconds = xgb_training_seconds + gnn_training_seconds
+        training_by_model_seconds = {
+            "xgboost": xgb_training_seconds,
+            "graphsage": gnn_training_seconds,
+        }
 
-        xgb_val_probabilities = cp.asnumpy(
-            XGB.predict_proba(
-                customer_val.drop(columns=RF_XGB_EXCLUDED_COLUMNS, errors="ignore")
-            )
+        test_context = pd.concat(
+            [graph_train.drop(columns=["fraud"]), graph_val.drop(columns=["fraud"])],
+            ignore_index=True,
         )
-        gnn_val_probabilities = GNN.predict_proba(
-            graph_val.drop(columns=["fraud"]),
-            context_df="train",
-        )
-        gnn_val_probabilities = np.asarray(gnn_val_probabilities).reshape(-1)
-        if not np.array_equal(
-            _align_rows(graph_val, customer_val, ensemble_id_column)["fraud"].to_numpy(),
-            graph_val["fraud"].to_numpy(),
-        ):
-            raise ValueError("A hibrid validációs címkék sorrendje nem egyezik.")
-        xgb_val_probabilities = _align_probabilities(
-            graph_val, customer_val, xgb_val_probabilities, ensemble_id_column
-        )
-        gnn_weight, threshold = _tune_probability_ensemble(
-            y_val=graph_val["fraud"],
-            amounts_val=graph_val["amount"],
-            xgb_probabilities=xgb_val_probabilities,
-            gnn_probabilities=gnn_val_probabilities,
-        )
-
+        _synchronize_accelerators()
+        inference_started = time.perf_counter()
         xgb_test_probabilities = cp.asnumpy(
             XGB.predict_proba(
                 customer_test.drop(columns=RF_XGB_EXCLUDED_COLUMNS, errors="ignore")
             )
         )
-        test_context = pd.concat(
-            [graph_train.drop(columns=["fraud"]), graph_val.drop(columns=["fraud"])],
-            ignore_index=True,
-        )
+        _synchronize_accelerators()
+        xgb_inference_seconds = time.perf_counter() - inference_started
+        inference_started = time.perf_counter()
         gnn_test_probabilities = GNN.predict_proba(
             graph_test.drop(columns=["fraud"]),
             context_df=test_context,
         )
+        _synchronize_accelerators()
+        gnn_inference_seconds = time.perf_counter() - inference_started
+        inference_by_model_seconds = {
+            "xgboost": xgb_inference_seconds,
+            "graphsage": gnn_inference_seconds,
+        }
         gnn_test_probabilities = np.asarray(gnn_test_probabilities).reshape(-1)
         if not np.array_equal(
             _align_rows(graph_test, customer_test, ensemble_id_column)["fraud"].to_numpy(),
@@ -322,12 +301,12 @@ def run_pipeline(input_path=RAW_DATA_PATH, model="XGB"):
             graph_test, customer_test, xgb_test_probabilities, ensemble_id_column
         )
         test_probabilities = (
-            (1.0 - gnn_weight) * xgb_test_probabilities
-            + gnn_weight * gnn_test_probabilities
+            (1.0 - HYBRID_GNN_WEIGHT) * xgb_test_probabilities
+            + HYBRID_GNN_WEIGHT * gnn_test_probabilities
         )
-        predictions = (test_probabilities >= threshold).astype(int)
+        predictions = (test_probabilities >= HYBRID_THRESHOLD).astype(int)
         metric_values = classification_metrics(
-            graph_test["fraud"], test_probabilities, threshold=threshold
+            graph_test["fraud"], test_probabilities, threshold=HYBRID_THRESHOLD
         )
         tn, fp, fn, tp = cp.asnumpy(
             metric_values["confusion_matrix"]
@@ -341,7 +320,7 @@ def run_pipeline(input_path=RAW_DATA_PATH, model="XGB"):
         baseline_cost = compute_cost(
             y_test, np.zeros_like(y_test), amounts_test
         )
-        metrics = {
+        result = {
             "model_name": "XGBoostGraphSAGEEnsemble",
             "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "model_params": {
@@ -355,8 +334,8 @@ def run_pipeline(input_path=RAW_DATA_PATH, model="XGB"):
                 },
             },
             "combination": "weighted_probability_average",
-            "gnn_weight": gnn_weight,
-            "threshold": threshold,
+            "gnn_weight": HYBRID_GNN_WEIGHT,
+            "threshold": HYBRID_THRESHOLD,
             "n_test_samples": int(len(y_test)),
             "fraud_rate": float(y_test.mean()) if len(y_test) else 0.0,
             "AUC-ROC": metric_values["AUC-ROC"],
@@ -375,7 +354,7 @@ def run_pipeline(input_path=RAW_DATA_PATH, model="XGB"):
                 "fp_cost": 10.0,
                 "tp_cost": 10.0,
                 "fn_multiplier": 1.0,
-                "threshold": threshold,
+                "threshold": HYBRID_THRESHOLD,
                 "total_cost": total_cost,
                 "total_cost_at_0.5": cost_at_05,
                 "baseline_cost": baseline_cost,
@@ -385,24 +364,80 @@ def run_pipeline(input_path=RAW_DATA_PATH, model="XGB"):
             },
         }
         results_path = PROJECT_ROOT / "metrics" / "hybrid_evaluation.json"
-        results_path.parent.mkdir(parents=True, exist_ok=True)
-        existing_results = []
-        if results_path.exists():
-            with results_path.open("r", encoding="utf-8") as results_file:
-                existing_results = json.load(results_file)
-            if not isinstance(existing_results, list):
-                existing_results = [existing_results]
-        existing_results.append(metrics)
-        with results_path.open("w", encoding="utf-8") as results_file:
-            json.dump(existing_results, results_file, indent=2, ensure_ascii=False)
-        print(f"A hibrid modell eredménye elmentve ide: {results_path}")
     else:
         raise ValueError("A MODEL értéke csak RF, XGB, GNN vagy HYBRID lehet.")
+
+    timing_seconds = result.get("timing_seconds", {})
+    timing_seconds.update({
+        "preprocessing": preprocessing_seconds,
+        "hyperparameter_tuning": hyperparameter_tuning_seconds,
+        "training": training_seconds,
+        "threshold_tuning": threshold_tuning_seconds,
+        "total_pipeline": time.perf_counter() - pipeline_started,
+    })
+    if inference_by_model_seconds is not None:
+        timing_seconds["inference"] = sum(inference_by_model_seconds.values())
+        timing_seconds["inference_by_model"] = inference_by_model_seconds
+    if training_by_model_seconds is not None:
+        timing_seconds["training_by_model"] = training_by_model_seconds
+    inference_seconds = timing_seconds["inference"]
+    if result["n_test_samples"] > 0:
+        timing_seconds["inference_ms_per_sample"] = (
+            inference_seconds * 1000 / result["n_test_samples"]
+        )
+        timing_seconds["inference_samples_per_second"] = (
+            result["n_test_samples"] / inference_seconds
+            if inference_seconds > 0
+            else None
+        )
+    result["timing_seconds"] = timing_seconds
+    if run_number is not None:
+        result["run_number"] = run_number
+    if run_group is not None:
+        result["run_group"] = run_group
+    results_path.parent.mkdir(parents=True, exist_ok=True)
+    existing_results = []
+    if results_path.exists():
+        with results_path.open("r", encoding="utf-8") as results_file:
+            existing_results = json.load(results_file)
+        if not isinstance(existing_results, list):
+            existing_results = [existing_results]
+    existing_results.append(result)
+    with results_path.open("w", encoding="utf-8") as results_file:
+        json.dump(existing_results, results_file, indent=2, ensure_ascii=False)
+    print(f"Az eredmény elmentve ide: {results_path}")
     print("Pipeline futtatva.")
+    return result
 
 
 if __name__ == "__main__":
     model = os.getenv("MODEL", "XGB").strip().upper()
     if model not in {"RF", "XGB", "GNN", "HYBRID"}:
         raise SystemExit("A MODEL értéke csak RF, XGB, GNN vagy HYBRID lehet.")
-    run_pipeline(model=model)
+    if model in {"RF", "XGB", "GNN", "HYBRID"}:
+        run_group = datetime.now(timezone.utc).isoformat(timespec="microseconds")
+        results = [
+            run_pipeline(model=model, run_number=run_number, run_group=run_group)
+            for run_number in range(1, MODEL_REPEAT_COUNT + 1)
+        ]
+        timing_keys = ("preprocessing", "training", "inference", "total_pipeline")
+        timing_summary = {
+            "run_count": len(results),
+            **{
+                f"average_{key}_seconds": statistics.fmean(
+                    result["timing_seconds"][key] for result in results
+                )
+                for key in timing_keys
+            },
+        }
+        results_path = PROJECT_ROOT / "metrics" / f"{model.lower()}_evaluation.json"
+        with results_path.open("r", encoding="utf-8") as results_file:
+            all_results = json.load(results_file)
+        for result in all_results:
+            if result.get("run_group") == run_group:
+                result["timing_summary"] = timing_summary
+        with results_path.open("w", encoding="utf-8") as results_file:
+            json.dump(all_results, results_file, indent=2, ensure_ascii=False)
+        print(f"{model} átlagos időeredmények: {timing_summary}")
+    else:
+        run_pipeline(model=model)

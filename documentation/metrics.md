@@ -56,3 +56,24 @@ ahol:
 ### Fontos megjegyzés
 
 A fraud detektálási feladat üzleti célja nem az accuracy maximalizálása, hanem a teljes költség (`total_cost`) minimalizálása. Emiatt a modell threshold-ja a költségfüggvény alapján kerül optimalizálásra, nem pedig a hagyományos 0,5-ös döntési küszöb szerint.
+
+## Időmérési metrikák (Timing metrics)
+
+Az időadatok a JSON rekord `timing_seconds` objektumában szerepelnek. Az időtartamok másodpercben értendők; a GPU-s műveleteknél az időmérés előtt és után szinkronizálás történik.
+
+| Mező | Mértékegység | Jelentés |
+|----------|----------|----------|
+| `preprocessing` | másodperc | Adatbetöltés, tisztítás, feature engineering, adatok felosztása és kódolása. GraphSAGE esetén a tanításhoz szükséges gráfok előkészítési idejét is tartalmazza. |
+| `hyperparameter_tuning` | másodperc | A hyperparaméter-keresés teljes ideje, beleértve a próbafuttatásokat. Rögzített paraméterekkel futó modellnél 0. |
+| `training` | másodperc | A kiválasztott paraméterekkel végzett végső modellillesztés ideje. GraphSAGE-nél nem tartalmazza a gráf előkészítését; hibrid modellnél az XGBoost és GraphSAGE tanítási idejének összege. |
+| `training_by_model` | másodperc, modellenként | Hibrid modellnél az egyes komponensek (`xgboost`, `graphsage`) végső tanítási ideje. |
+| `threshold_tuning` | másodperc | Az optimális döntési küszöb meghatározásának ideje a validációs adatokon. A hibrid modellnél a súly és a küszöb keresését, valamint a szükséges validációs predikciókat is tartalmazza. Rögzített paraméterrel futó modellnél 0. |
+| `inference` | másodperc | A teszthalmaz fraud-valószínűségeinek kiszámítási ideje. A metrikák és költségek kiszámítása nem része ennek az időnek. |
+| `inference_by_model` | másodperc, modellenként | Hibrid modellnél az `xgboost` és a `graphsage` komponens teszthalmazon mért predikciós ideje. |
+| `inference_ms_per_sample` | milliszekundum/minta | Egy tesztminta átlagos predikciós ideje: `inference × 1000 / n_test_samples`. |
+| `inference_samples_per_second` | minta/másodperc | Tesztinferencia sebessége: `n_test_samples / inference`. |
+| `total_pipeline` | másodperc | Az adat-előkészítés kezdetétől a metrikák kiszámításáig mért teljes futásidő. Tartalmazza az előfeldolgozást, a hangolást, a tanítást és az értékelést; a JSON-fájlba írást nem. |
+
+Az `inference` a teszthalmaz modell általi pontozását méri, nem az adatbetöltést vagy az előfeldolgozást. A `total_pipeline` ezzel szemben a teljes mérési folyamatot foglalja össze, ezért a modell futásidejének gyakorlati, végponttól végpontig tartó becslésére használható. A hangolási időt a végső `training` időtől külön kell értelmezni: a hangolás alatt több modellpróba is lefuthat.
+
+RF, XGBoost, GraphSAGE és a hibrid modell ismételt futtatásakor a `__main__` tízszer meghívja a `run_pipeline` függvényt; így minden ismétlés önállóan elvégzi az előfeldolgozást, tanítást és tesztelést, rögzített paraméterekkel és küszöbbel, hangolás nélkül. A hibrid modell az előre rögzített XGBoost–GraphSAGE súlyozást is használja. Minden eredményrekord tartalmazza a futássorszámot (`run_number`), az ismétléseket összekapcsoló azonosítót (`run_group`) és a saját időadatait. A `timing_summary` a csoport ismétlésszámát és az előfeldolgozás, tanítás, inference, illetve teljes pipeline átlagidejét tartalmazza; az összes futás rekordjába bekerül.

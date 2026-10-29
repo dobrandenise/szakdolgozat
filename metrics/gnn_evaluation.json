@@ -76,5 +76,636 @@
       "baseline_cost": 784218.94,
       "cost_savings": 0.9605036828108232
     }
+  },
+  {
+    "model_name": "GraphSAGEModel",
+    "timestamp": "2026-10-29T20:20:02+00:00",
+    "timing_seconds": {
+      "inference": 83.62699894300022,
+      "preprocessing": 22.479911374999574,
+      "hyperparameter_tuning": 0.0,
+      "training": 66.25449794999986,
+      "threshold_tuning": 0.0,
+      "total_pipeline": 177.5759313929998,
+      "inference_ms_per_sample": 0.6958363061273752,
+      "inference_samples_per_second": 1437.1196087272665
+    },
+    "model_params": {
+      "hidden_dim": 64,
+      "num_layers": 2,
+      "dropout": 0.2890856026631795,
+      "lr": 0.0003017731896320215,
+      "sup_batch_size": 8192,
+      "pos_weight": 20,
+      "eval_chunk_steps": 1
+    },
+    "best_val_pr_auc": 0.9456633925437927,
+    "threshold": 0.85,
+    "n_test_samples": 120182,
+    "fraud_rate": 0.011881978998518913,
+    "AUC-ROC": 0.9980670809745789,
+    "AUC-PR": 0.862104544310277,
+    "precision_fraud": 0.6095797559873475,
+    "accuracy": 0.9921535670899136,
+    "recall_fraud": 0.9446778711484594,
+    "f1_fraud": 0.7410052183466082,
+    "confusion_matrix": {
+      "tn": 117890,
+      "fp": 864,
+      "fn": 79,
+      "tp": 1349
+    },
+    "cost": {
+      "fp_cost": 10.0,
+      "tp_cost": 10.0,
+      "fn_multiplier": 1.0,
+      "threshold": 0.85,
+      "total_cost": 30078.38,
+      "total_cost_at_0.5": 37121.03,
+      "baseline_cost": 784218.94,
+      "cost_savings": 0.961645430292719
+    },
+    "run_number": 1,
+    "run_group": "2026-10-29T20:17:05.294735+00:00"
+  },
+  {
+    "model_name": "GraphSAGEModel",
+    "timestamp": "2026-10-29T20:37:48+00:00",
+    "timing_seconds": {
+      "inference": 81.2491599799996,
+      "preprocessing": 21.313250562000576,
+      "hyperparameter_tuning": 0.0,
+      "training": 66.41699085699929,
+      "threshold_tuning": 0.0,
+      "total_pipeline": 173.8704241180003,
+      "inference_ms_per_sample": 0.6760509891664276,
+      "inference_samples_per_second": 1479.1783697158735
+    },
+    "model_params": {
+      "hidden_dim": 64,
+      "num_layers": 2,
+      "dropout": 0.2890856026631795,
+      "lr": 0.0003017731896320215,
+      "sup_batch_size": 8192,
+      "pos_weight": 20,
+      "eval_chunk_steps": 1
+    },
+    "best_val_pr_auc": 0.9456679224967957,
+    "threshold": 0.85,
+    "n_test_samples": 120182,
+    "fraud_rate": 0.011881978998518913,
+    "AUC-ROC": 0.9980599284172058,
+    "AUC-PR": 0.8608082763156463,
+    "precision_fraud": 0.6079315006759801,
+    "accuracy": 0.9921036428084072,
+    "recall_fraud": 0.9446778711484594,
+    "f1_fraud": 0.7397861255826705,
+    "confusion_matrix": {
+      "tn": 117884,
+      "fp": 870,
+      "fn": 79,
+      "tp": 1349
+    },
+    "cost": {
+      "fp_cost": 10.0,
+      "tp_cost": 10.0,
+      "fn_multiplier": 1.0,
+      "threshold": 0.85,
+      "total_cost": 30138.38,
+      "total_cost_at_0.5": 37121.03,
+      "baseline_cost": 784218.94,
+      "cost_savings": 0.9615689210464619
+    },
+    "run_number": 1,
+    "run_group": "2026-10-29T20:34:54.309221+00:00",
+    "timing_summary": {
+      "run_count": 10,
+      "average_preprocessing_seconds": 20.74708084740005,
+      "average_training_seconds": 60.27911358090014,
+      "average_inference_seconds": 82.48574775859989,
+      "average_total_pipeline_seconds": 164.28322125019986
+    }
+  },
+  {
+    "model_name": "GraphSAGEModel",
+    "timestamp": "2026-10-29T20:40:34+00:00",
+    "timing_seconds": {
+      "inference": 82.94912994100014,
+      "preprocessing": 21.664274925000427,
+      "hyperparameter_tuning": 0.0,
+      "training": 61.78878271099984,
+      "threshold_tuning": 0.0,
+      "total_pipeline": 166.72363093100012,
+      "inference_ms_per_sample": 0.6901959523139916,
+      "inference_samples_per_second": 1448.863901110027
+    },
+    "model_params": {
+      "hidden_dim": 64,
+      "num_layers": 2,
+      "dropout": 0.2890856026631795,
+      "lr": 0.0003017731896320215,
+      "sup_batch_size": 8192,
+      "pos_weight": 20,
+      "eval_chunk_steps": 1
+    },
+    "best_val_pr_auc": 0.9456449747085571,
+    "threshold": 0.85,
+    "n_test_samples": 120182,
+    "fraud_rate": 0.011881978998518913,
+    "AUC-ROC": 0.9980574250221252,
+    "AUC-PR": 0.8608024464588389,
+    "precision_fraud": 0.608754512635379,
+    "accuracy": 0.9921286049491604,
+    "recall_fraud": 0.9446778711484594,
+    "f1_fraud": 0.7403951701427003,
+    "confusion_matrix": {
+      "tn": 117887,
+      "fp": 867,
+      "fn": 79,
+      "tp": 1349
+    },
+    "cost": {
+      "fp_cost": 10.0,
+      "tp_cost": 10.0,
+      "fn_multiplier": 1.0,
+      "threshold": 0.85,
+      "total_cost": 30108.38,
+      "total_cost_at_0.5": 37051.03,
+      "baseline_cost": 784218.94,
+      "cost_savings": 0.9616071756695904
+    },
+    "run_number": 2,
+    "run_group": "2026-10-29T20:34:54.309221+00:00",
+    "timing_summary": {
+      "run_count": 10,
+      "average_preprocessing_seconds": 20.74708084740005,
+      "average_training_seconds": 60.27911358090014,
+      "average_inference_seconds": 82.48574775859989,
+      "average_total_pipeline_seconds": 164.28322125019986
+    }
+  },
+  {
+    "model_name": "GraphSAGEModel",
+    "timestamp": "2026-10-29T20:43:20+00:00",
+    "timing_seconds": {
+      "inference": 83.39950744900034,
+      "preprocessing": 20.663719031000255,
+      "hyperparameter_tuning": 0.0,
+      "training": 60.77142452000044,
+      "threshold_tuning": 0.0,
+      "total_pipeline": 165.10472921400014,
+      "inference_ms_per_sample": 0.6939434145629158,
+      "inference_samples_per_second": 1441.0396856779105
+    },
+    "model_params": {
+      "hidden_dim": 64,
+      "num_layers": 2,
+      "dropout": 0.2890856026631795,
+      "lr": 0.0003017731896320215,
+      "sup_batch_size": 8192,
+      "pos_weight": 20,
+      "eval_chunk_steps": 1
+    },
+    "best_val_pr_auc": 0.9456479549407959,
+    "threshold": 0.85,
+    "n_test_samples": 120182,
+    "fraud_rate": 0.011881978998518913,
+    "AUC-ROC": 0.9980561137199402,
+    "AUC-PR": 0.8605968640873534,
+    "precision_fraud": 0.6089309878213802,
+    "accuracy": 0.9921369256627448,
+    "recall_fraud": 0.9453781512605042,
+    "f1_fraud": 0.7407407407407408,
+    "confusion_matrix": {
+      "tn": 117887,
+      "fp": 867,
+      "fn": 78,
+      "tp": 1350
+    },
+    "cost": {
+      "fp_cost": 10.0,
+      "tp_cost": 10.0,
+      "fn_multiplier": 1.0,
+      "threshold": 0.85,
+      "total_cost": 30076.9,
+      "total_cost_at_0.5": 37044.86,
+      "baseline_cost": 784218.94,
+      "cost_savings": 0.9616473175207934
+    },
+    "run_number": 3,
+    "run_group": "2026-10-29T20:34:54.309221+00:00",
+    "timing_summary": {
+      "run_count": 10,
+      "average_preprocessing_seconds": 20.74708084740005,
+      "average_training_seconds": 60.27911358090014,
+      "average_inference_seconds": 82.48574775859989,
+      "average_total_pipeline_seconds": 164.28322125019986
+    }
+  },
+  {
+    "model_name": "GraphSAGEModel",
+    "timestamp": "2026-10-29T20:46:01+00:00",
+    "timing_seconds": {
+      "inference": 82.1062487729996,
+      "preprocessing": 20.349625963000108,
+      "hyperparameter_tuning": 0.0,
+      "training": 58.46681066900055,
+      "threshold_tuning": 0.0,
+      "total_pipeline": 161.1752653049998,
+      "inference_ms_per_sample": 0.6831825795293771,
+      "inference_samples_per_second": 1463.737557080083
+    },
+    "model_params": {
+      "hidden_dim": 64,
+      "num_layers": 2,
+      "dropout": 0.2890856026631795,
+      "lr": 0.0003017731896320215,
+      "sup_batch_size": 8192,
+      "pos_weight": 20,
+      "eval_chunk_steps": 1
+    },
+    "best_val_pr_auc": 0.9456439018249512,
+    "threshold": 0.85,
+    "n_test_samples": 120182,
+    "fraud_rate": 0.011881978998518913,
+    "AUC-ROC": 0.9980533719062805,
+    "AUC-PR": 0.8600499935180698,
+    "precision_fraud": 0.6072874493927125,
+    "accuracy": 0.9920870013812385,
+    "recall_fraud": 0.9453781512605042,
+    "f1_fraud": 0.7395234182415776,
+    "confusion_matrix": {
+      "tn": 117881,
+      "fp": 873,
+      "fn": 78,
+      "tp": 1350
+    },
+    "cost": {
+      "fp_cost": 10.0,
+      "tp_cost": 10.0,
+      "fn_multiplier": 1.0,
+      "threshold": 0.85,
+      "total_cost": 30136.9,
+      "total_cost_at_0.5": 37201.03,
+      "baseline_cost": 784218.94,
+      "cost_savings": 0.9615708082745362
+    },
+    "run_number": 4,
+    "run_group": "2026-10-29T20:34:54.309221+00:00",
+    "timing_summary": {
+      "run_count": 10,
+      "average_preprocessing_seconds": 20.74708084740005,
+      "average_training_seconds": 60.27911358090014,
+      "average_inference_seconds": 82.48574775859989,
+      "average_total_pipeline_seconds": 164.28322125019986
+    }
+  },
+  {
+    "model_name": "GraphSAGEModel",
+    "timestamp": "2026-10-29T20:48:44+00:00",
+    "timing_seconds": {
+      "inference": 81.82169237400012,
+      "preprocessing": 20.243505456999628,
+      "hyperparameter_tuning": 0.0,
+      "training": 59.84176745300101,
+      "threshold_tuning": 0.0,
+      "total_pipeline": 162.20055821200003,
+      "inference_ms_per_sample": 0.6808148672346951,
+      "inference_samples_per_second": 1468.8280884078774
+    },
+    "model_params": {
+      "hidden_dim": 64,
+      "num_layers": 2,
+      "dropout": 0.2890856026631795,
+      "lr": 0.0003017731896320215,
+      "sup_batch_size": 8192,
+      "pos_weight": 20,
+      "eval_chunk_steps": 1
+    },
+    "best_val_pr_auc": 0.945681631565094,
+    "threshold": 0.85,
+    "n_test_samples": 120182,
+    "fraud_rate": 0.011881978998518913,
+    "AUC-ROC": 0.9980655312538147,
+    "AUC-PR": 0.8619391899708622,
+    "precision_fraud": 0.6098553345388789,
+    "accuracy": 0.992161887803498,
+    "recall_fraud": 0.9446778711484594,
+    "f1_fraud": 0.7412087912087911,
+    "confusion_matrix": {
+      "tn": 117891,
+      "fp": 863,
+      "fn": 79,
+      "tp": 1349
+    },
+    "cost": {
+      "fp_cost": 10.0,
+      "tp_cost": 10.0,
+      "fn_multiplier": 1.0,
+      "threshold": 0.85,
+      "total_cost": 30068.38,
+      "total_cost_at_0.5": 37071.03,
+      "baseline_cost": 784218.94,
+      "cost_savings": 0.9616581818337618
+    },
+    "run_number": 5,
+    "run_group": "2026-10-29T20:34:54.309221+00:00",
+    "timing_summary": {
+      "run_count": 10,
+      "average_preprocessing_seconds": 20.74708084740005,
+      "average_training_seconds": 60.27911358090014,
+      "average_inference_seconds": 82.48574775859989,
+      "average_total_pipeline_seconds": 164.28322125019986
+    }
+  },
+  {
+    "model_name": "GraphSAGEModel",
+    "timestamp": "2026-10-29T20:51:29+00:00",
+    "timing_seconds": {
+      "inference": 83.61337253500005,
+      "preprocessing": 21.075499493998905,
+      "hyperparameter_tuning": 0.0,
+      "training": 59.32405809100055,
+      "threshold_tuning": 0.0,
+      "total_pipeline": 164.30046596399916,
+      "inference_ms_per_sample": 0.6957229246892218,
+      "inference_samples_per_second": 1437.353815021545
+    },
+    "model_params": {
+      "hidden_dim": 64,
+      "num_layers": 2,
+      "dropout": 0.2890856026631795,
+      "lr": 0.0003017731896320215,
+      "sup_batch_size": 8192,
+      "pos_weight": 20,
+      "eval_chunk_steps": 1
+    },
+    "best_val_pr_auc": 0.9456324577331543,
+    "threshold": 0.85,
+    "n_test_samples": 120182,
+    "fraud_rate": 0.011881978998518913,
+    "AUC-ROC": 0.9980578422546387,
+    "AUC-PR": 0.8608264550871302,
+    "precision_fraud": 0.6078343088698784,
+    "accuracy": 0.9921036428084072,
+    "recall_fraud": 0.9453781512605042,
+    "f1_fraud": 0.7399287476020828,
+    "confusion_matrix": {
+      "tn": 117883,
+      "fp": 871,
+      "fn": 78,
+      "tp": 1350
+    },
+    "cost": {
+      "fp_cost": 10.0,
+      "tp_cost": 10.0,
+      "fn_multiplier": 1.0,
+      "threshold": 0.85,
+      "total_cost": 30116.9,
+      "total_cost_at_0.5": 37034.86,
+      "baseline_cost": 784218.94,
+      "cost_savings": 0.9615963113566219
+    },
+    "run_number": 6,
+    "run_group": "2026-10-29T20:34:54.309221+00:00",
+    "timing_summary": {
+      "run_count": 10,
+      "average_preprocessing_seconds": 20.74708084740005,
+      "average_training_seconds": 60.27911358090014,
+      "average_inference_seconds": 82.48574775859989,
+      "average_total_pipeline_seconds": 164.28322125019986
+    }
+  },
+  {
+    "model_name": "GraphSAGEModel",
+    "timestamp": "2026-10-29T20:54:10+00:00",
+    "timing_seconds": {
+      "inference": 82.66234302900011,
+      "preprocessing": 20.592851542999597,
+      "hyperparameter_tuning": 0.0,
+      "training": 57.74141768899972,
+      "threshold_tuning": 0.0,
+      "total_pipeline": 161.4012373149999,
+      "inference_ms_per_sample": 0.6878096805594858,
+      "inference_samples_per_second": 1453.8905576126365
+    },
+    "model_params": {
+      "hidden_dim": 64,
+      "num_layers": 2,
+      "dropout": 0.2890856026631795,
+      "lr": 0.0003017731896320215,
+      "sup_batch_size": 8192,
+      "pos_weight": 20,
+      "eval_chunk_steps": 1
+    },
+    "best_val_pr_auc": 0.9456838369369507,
+    "threshold": 0.85,
+    "n_test_samples": 120182,
+    "fraud_rate": 0.011881978998518913,
+    "AUC-ROC": 0.9980615377426147,
+    "AUC-PR": 0.8608543669973308,
+    "precision_fraud": 0.6094808126410836,
+    "accuracy": 0.9921535670899136,
+    "recall_fraud": 0.9453781512605042,
+    "f1_fraud": 0.7411474059840791,
+    "confusion_matrix": {
+      "tn": 117889,
+      "fp": 865,
+      "fn": 78,
+      "tp": 1350
+    },
+    "cost": {
+      "fp_cost": 10.0,
+      "tp_cost": 10.0,
+      "fn_multiplier": 1.0,
+      "threshold": 0.85,
+      "total_cost": 30023.2,
+      "total_cost_at_0.5": 37181.03,
+      "baseline_cost": 784218.94,
+      "cost_savings": 0.9617157932961935
+    },
+    "run_number": 7,
+    "run_group": "2026-10-29T20:34:54.309221+00:00",
+    "timing_summary": {
+      "run_count": 10,
+      "average_preprocessing_seconds": 20.74708084740005,
+      "average_training_seconds": 60.27911358090014,
+      "average_inference_seconds": 82.48574775859989,
+      "average_total_pipeline_seconds": 164.28322125019986
+    }
+  },
+  {
+    "model_name": "GraphSAGEModel",
+    "timestamp": "2026-10-29T20:56:53+00:00",
+    "timing_seconds": {
+      "inference": 82.0680068669999,
+      "preprocessing": 20.563337232000777,
+      "hyperparameter_tuning": 0.0,
+      "training": 59.415946180999526,
+      "threshold_tuning": 0.0,
+      "total_pipeline": 162.34632389999933,
+      "inference_ms_per_sample": 0.6828643795826322,
+      "inference_samples_per_second": 1464.4196269414458
+    },
+    "model_params": {
+      "hidden_dim": 64,
+      "num_layers": 2,
+      "dropout": 0.2890856026631795,
+      "lr": 0.0003017731896320215,
+      "sup_batch_size": 8192,
+      "pos_weight": 20,
+      "eval_chunk_steps": 1
+    },
+    "best_val_pr_auc": 0.9456490278244019,
+    "threshold": 0.85,
+    "n_test_samples": 120182,
+    "fraud_rate": 0.011881978998518913,
+    "AUC-ROC": 0.9980695843696594,
+    "AUC-PR": 0.8621518042357477,
+    "precision_fraud": 0.6093044263775971,
+    "accuracy": 0.9921452463763293,
+    "recall_fraud": 0.9446778711484594,
+    "f1_fraud": 0.7408017572762218,
+    "confusion_matrix": {
+      "tn": 117889,
+      "fp": 865,
+      "fn": 79,
+      "tp": 1349
+    },
+    "cost": {
+      "fp_cost": 10.0,
+      "tp_cost": 10.0,
+      "fn_multiplier": 1.0,
+      "threshold": 0.85,
+      "total_cost": 30088.38,
+      "total_cost_at_0.5": 37051.03,
+      "baseline_cost": 784218.94,
+      "cost_savings": 0.9616326787516761
+    },
+    "run_number": 8,
+    "run_group": "2026-10-29T20:34:54.309221+00:00",
+    "timing_summary": {
+      "run_count": 10,
+      "average_preprocessing_seconds": 20.74708084740005,
+      "average_training_seconds": 60.27911358090014,
+      "average_inference_seconds": 82.48574775859989,
+      "average_total_pipeline_seconds": 164.28322125019986
+    }
+  },
+  {
+    "model_name": "GraphSAGEModel",
+    "timestamp": "2026-10-29T20:59:36+00:00",
+    "timing_seconds": {
+      "inference": 82.99296164999942,
+      "preprocessing": 20.51237014200069,
+      "hyperparameter_tuning": 0.0,
+      "training": 58.6120871840003,
+      "threshold_tuning": 0.0,
+      "total_pipeline": 162.44192083100006,
+      "inference_ms_per_sample": 0.6905606634104893,
+      "inference_samples_per_second": 1448.0987015120077
+    },
+    "model_params": {
+      "hidden_dim": 64,
+      "num_layers": 2,
+      "dropout": 0.2890856026631795,
+      "lr": 0.0003017731896320215,
+      "sup_batch_size": 8192,
+      "pos_weight": 20,
+      "eval_chunk_steps": 1
+    },
+    "best_val_pr_auc": 0.9456740617752075,
+    "threshold": 0.85,
+    "n_test_samples": 120182,
+    "fraud_rate": 0.011881978998518913,
+    "AUC-ROC": 0.9980619549751282,
+    "AUC-PR": 0.8613796470249807,
+    "precision_fraud": 0.6079315006759801,
+    "accuracy": 0.9921036428084072,
+    "recall_fraud": 0.9446778711484594,
+    "f1_fraud": 0.7397861255826705,
+    "confusion_matrix": {
+      "tn": 117884,
+      "fp": 870,
+      "fn": 79,
+      "tp": 1349
+    },
+    "cost": {
+      "fp_cost": 10.0,
+      "tp_cost": 10.0,
+      "fn_multiplier": 1.0,
+      "threshold": 0.85,
+      "total_cost": 30138.38,
+      "total_cost_at_0.5": 37004.86,
+      "baseline_cost": 784218.94,
+      "cost_savings": 0.9615689210464619
+    },
+    "run_number": 9,
+    "run_group": "2026-10-29T20:34:54.309221+00:00",
+    "timing_summary": {
+      "run_count": 10,
+      "average_preprocessing_seconds": 20.74708084740005,
+      "average_training_seconds": 60.27911358090014,
+      "average_inference_seconds": 82.48574775859989,
+      "average_total_pipeline_seconds": 164.28322125019986
+    }
+  },
+  {
+    "model_name": "GraphSAGEModel",
+    "timestamp": "2026-10-29T21:02:20+00:00",
+    "timing_seconds": {
+      "inference": 81.99505498799954,
+      "preprocessing": 20.492374124999515,
+      "hyperparameter_tuning": 0.0,
+      "training": 60.41185045400016,
+      "threshold_tuning": 0.0,
+      "total_pipeline": 163.26765671199973,
+      "inference_ms_per_sample": 0.6822573678920266,
+      "inference_samples_per_second": 1465.7225367748013
+    },
+    "model_params": {
+      "hidden_dim": 64,
+      "num_layers": 2,
+      "dropout": 0.2890856026631795,
+      "lr": 0.0003017731896320215,
+      "sup_batch_size": 8192,
+      "pos_weight": 20,
+      "eval_chunk_steps": 1
+    },
+    "best_val_pr_auc": 0.9456542730331421,
+    "threshold": 0.85,
+    "n_test_samples": 120182,
+    "fraud_rate": 0.011881978998518913,
+    "AUC-ROC": 0.998059868812561,
+    "AUC-PR": 0.8610554987556854,
+    "precision_fraud": 0.6083821541234791,
+    "accuracy": 0.9921202842355761,
+    "recall_fraud": 0.9453781512605042,
+    "f1_fraud": 0.7403345215245407,
+    "confusion_matrix": {
+      "tn": 117885,
+      "fp": 869,
+      "fn": 78,
+      "tp": 1350
+    },
+    "cost": {
+      "fp_cost": 10.0,
+      "tp_cost": 10.0,
+      "fn_multiplier": 1.0,
+      "threshold": 0.85,
+      "total_cost": 30096.9,
+      "total_cost_at_0.5": 37004.86,
+      "baseline_cost": 784218.94,
+      "cost_savings": 0.9616218144387076
+    },
+    "run_number": 10,
+    "run_group": "2026-10-29T20:34:54.309221+00:00",
+    "timing_summary": {
+      "run_count": 10,
+      "average_preprocessing_seconds": 20.74708084740005,
+      "average_training_seconds": 60.27911358090014,
+      "average_inference_seconds": 82.48574775859989,
+      "average_total_pipeline_seconds": 164.28322125019986
+    }
   }
 ]

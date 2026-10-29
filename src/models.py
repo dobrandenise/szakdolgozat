@@ -36,6 +36,8 @@ FÜGGŐSÉGEK:
 from __future__ import annotations
 
 import json
+import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -51,6 +53,14 @@ from xgboost import XGBClassifier
 # ---------------------------------------------------------------------------
 # GPU helpers and metrics
 # ---------------------------------------------------------------------------
+
+def _synchronize_accelerators() -> None:
+    if cp.cuda.is_available():
+        cp.cuda.runtime.deviceSynchronize()
+    torch = sys.modules.get("torch")
+    if torch is not None and torch.cuda.is_available():
+        torch.cuda.synchronize()
+
 
 def _to_gpu_features(X) -> cudf.DataFrame | cp.ndarray:
     if isinstance(X, cudf.DataFrame):
@@ -226,7 +236,11 @@ class RandomForestModel:
             raise RuntimeError("A modellt előbb fit()-elni kell.")
 
         threshold = self.threshold if threshold is None else threshold
+        _synchronize_accelerators()
+        inference_started = time.perf_counter()
         y_proba = self.predict_proba(X_test)
+        _synchronize_accelerators()
+        inference_seconds = time.perf_counter() - inference_started
         y_pred = (y_proba >= threshold).astype(int)
         
         metric_values = classification_metrics(y_test, y_proba, threshold=threshold)
@@ -235,6 +249,7 @@ class RandomForestModel:
         metrics = {
             "model_name": model_name,
             "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "timing_seconds": {"inference": inference_seconds},
             "model_params": self.model.get_params(),
             "best_params": self.best_params,
             "threshold": threshold,
@@ -391,7 +406,11 @@ class XGBoostModel:
             raise RuntimeError("A modellt előbb fit()-elni kell.")
 
         threshold = self.threshold if threshold is None else threshold
+        _synchronize_accelerators()
+        inference_started = time.perf_counter()
         y_proba = self.predict_proba(X_test)
+        _synchronize_accelerators()
+        inference_seconds = time.perf_counter() - inference_started
         y_pred = (y_proba >= threshold).astype(int)
         metric_values = classification_metrics(y_test, y_proba, threshold=threshold)
         tn, fp, fn, tp = cp.asnumpy(metric_values["confusion_matrix"]).ravel()
@@ -399,6 +418,7 @@ class XGBoostModel:
         metrics = {
             "model_name": model_name,
             "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "timing_seconds": {"inference": inference_seconds},
             "model_params": self.model.get_params(),
             "best_params": self.best_params,
             "threshold": threshold,
@@ -598,6 +618,7 @@ class GraphSAGEModel:
         self._edge_std = None
         self._edge_dim = 0
         self._fitted = False
+        self.preprocessing_seconds = 0.0
 
         self._check_feature_columns()
 
@@ -837,6 +858,7 @@ class GraphSAGEModel:
         self._set_seed()
 
         # 1) minden "fit" kizárólag a train-en
+        preprocessing_started = time.perf_counter()
         self._fit_preprocessing(train_df)
         self.customer_index, self.merchant_index = {}, {}
         self._extend_index(self.customer_index, np.sort(train_df["customer"].unique()))
@@ -846,6 +868,9 @@ class GraphSAGEModel:
         # 2) gráfok: train = csak train élek; val = train (context) + val élek
         train_graph = self._build_graph(None, train_df)
         val_graph = self._build_graph(train_df, val_df)
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        self.preprocessing_seconds = time.perf_counter() - preprocessing_started
 
         encoder = to_hetero(
             self._build_model(), train_graph["data"].metadata(), aggr="mean"
@@ -988,7 +1013,11 @@ class GraphSAGEModel:
             raise RuntimeError("A modellt előbb fit()-elni kell.")
 
         threshold = self.threshold if threshold is None else threshold
+        _synchronize_accelerators()
+        inference_started = time.perf_counter()
         y_proba = self.predict_proba(X_test, context_df=context_df)
+        _synchronize_accelerators()
+        inference_seconds = time.perf_counter() - inference_started
         y_pred = (y_proba >= threshold).astype(int)
         metric_values = classification_metrics(y_test, y_proba, threshold=threshold)
         tn, fp, fn, tp = cp.asnumpy(metric_values["confusion_matrix"]).ravel()
@@ -1004,6 +1033,7 @@ class GraphSAGEModel:
         metrics = {
             "model_name": model_name,
             "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "timing_seconds": {"inference": inference_seconds},
             "model_params": model_params,
             "best_val_pr_auc": self.best_val_pr_auc,
             "threshold": threshold,
