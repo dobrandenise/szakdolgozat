@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
+from matplotlib.ticker import FuncFormatter
 
 models = ['Véletlen erdő', 'XGBoost', 'GraphSAGE', 'Hibrid']
 auc_pr  = [0.9430, 0.9434, 0.8708, 0.9466]
@@ -19,22 +20,41 @@ for ax, vals, title, fmt in zip(
     [ax1, ax2, ax3],
     [auc_pr, auc_roc, cost],
     ['AUC-PR', 'AUC-ROC', 'Teszt adathalmazon mért költség (€)'],
-    ['{:.4f}', '{:.4f}', '{:,.0f}']
+    ['{:.4f}', '{:.4f}', '{:.0f}']
 ):
     bars = ax.bar(models, vals, color=colors)
 
     ax.set_title(title)
     ax.tick_params(axis='x', rotation=15)
 
-    ymin = min(vals) * 0.98
-    ymax = max(vals) * 1.02
+    if title == 'AUC-ROC':
+        ymin = min(vals) * 0.98
+        ymax = 1.001
+        ax.set_yticks([0.98, 0.985, 0.99, 0.995, 1.0])
+    else:
+        ymin = min(vals) * 0.98
+        ymax = max(vals) * 1.02
     ax.set_ylim(ymin, ymax)
 
+    if title in ('AUC-PR', 'AUC-ROC'):
+        ax.yaxis.set_major_formatter(
+            FuncFormatter(lambda value, _: f'{value:.4f}'.replace('.', ','))
+        )
+    else:
+        ax.yaxis.set_major_formatter(
+            FuncFormatter(lambda value, _: f'{value:.0f}')
+        )
+
     for bar, v in zip(bars, vals):
+        label = (
+            fmt.format(v).replace('.', ',')
+            if title in ('AUC-PR', 'AUC-ROC')
+            else fmt.format(v)
+        )
         ax.text(
             bar.get_x() + bar.get_width()/2,
             bar.get_height() + (ymax - ymin) * 0.01,
-            fmt.format(v),
+            label,
             ha='center',
             va='bottom',
             fontsize=9
