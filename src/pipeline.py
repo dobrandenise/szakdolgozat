@@ -201,6 +201,56 @@ def run_pipeline(input_path=RAW_DATA_PATH, model="XGB", run_number=None, run_gro
             threshold=XGB_THRESHOLD,
         )
         results_path = PROJECT_ROOT / "metrics" / "xgb_evaluation.json"
+    elif(model == "BASELINE"):
+        print("---Baseline RandomForest és XGBoost modellek---")
+        original_columns = list(cleaned_df.columns)
+        baseline_train = customer_train.loc[:, original_columns]
+        baseline_test = customer_test.loc[:, original_columns]
+        X_train = baseline_train.drop(
+            columns=RF_XGB_EXCLUDED_COLUMNS, errors="ignore"
+        )
+        X_test = baseline_test.drop(
+            columns=RF_XGB_EXCLUDED_COLUMNS, errors="ignore"
+        )
+        y_train = baseline_train["fraud"]
+        y_test = baseline_test["fraud"]
+        amounts_test = baseline_test["amount"]
+
+        model_results = {}
+        training_by_model_seconds = {}
+        for model_key, model_name, model_class in (
+            ("random_forest", "BaselineRandomForest", RandomForestModel),
+            ("xgboost", "BaselineXGBoost", XGBoostModel),
+        ):
+            model_instance = model_class()
+            _synchronize_accelerators()
+            training_started = time.perf_counter()
+            model_instance.fit(X_train=X_train, y_train=y_train)
+            _synchronize_accelerators()
+            training_by_model_seconds[model_key] = (
+                time.perf_counter() - training_started
+            )
+            model_result = model_instance.evaluate(
+                X_test=X_test,
+                y_test=y_test,
+                amounts_test=amounts_test,
+            )
+            model_result["model_name"] = model_name
+            model_results[model_key] = model_result
+
+        training_seconds = sum(training_by_model_seconds.values())
+        inference_by_model_seconds = {
+            model_key: model_result["timing_seconds"]["inference"]
+            for model_key, model_result in model_results.items()
+        }
+        result = {
+            "model_name": "BaselineRandomForestAndXGBoost",
+            "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "n_test_samples": int(len(y_test)),
+            "fraud_rate": float(y_test.mean()) if len(y_test) else 0.0,
+            "models": model_results,
+        }
+        results_path = PROJECT_ROOT / "metrics" / "baseline_evaluation.json"
     elif(model == "GNN"):
         print("---GraphSAGE modell---")
 
@@ -412,9 +462,11 @@ def run_pipeline(input_path=RAW_DATA_PATH, model="XGB", run_number=None, run_gro
 
 if __name__ == "__main__":
     model = os.getenv("MODEL", "XGB").strip().upper()
-    if model not in {"RF", "XGB", "GNN", "HYBRID"}:
-        raise SystemExit("A MODEL értéke csak RF, XGB, GNN vagy HYBRID lehet.")
-    if model in {"RF", "XGB", "GNN", "HYBRID"}:
+    if model not in {"RF", "XGB", "GNN", "HYBRID", "BASELINE"}:
+        raise SystemExit(
+            "A MODEL értéke csak RF, XGB, GNN, HYBRID vagy BASELINE lehet."
+        )
+    if model in {"RF", "XGB", "GNN", "HYBRID", "BASELINE"}:
         run_group = datetime.now(timezone.utc).isoformat(timespec="microseconds")
         results = [
             run_pipeline(model=model, run_number=run_number, run_group=run_group)
