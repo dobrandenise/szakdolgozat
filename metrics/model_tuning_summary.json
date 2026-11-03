@@ -1,0 +1,151 @@
+{
+  "models": [
+    {
+      "model_name": "RandomForestModel",
+      "n_trials_default": 100,
+      "optimization_metric": "average_precision",
+      "search_space": {
+        "n_estimators": {
+          "type": "int",
+          "low": 200,
+          "high": 800
+        },
+        "max_depth": {
+          "type": "int",
+          "low": 4,
+          "high": 24
+        },
+        "max_features": {
+          "type": "float",
+          "low": 0.2,
+          "high": 1.0
+        },
+        "min_samples_leaf": {
+          "type": "int",
+          "low": 1,
+          "high": 20
+        }
+      },
+      "pipeline_final_params": {
+        "n_estimators": 593,
+        "max_depth": 16,
+        "max_features": 0.48508241086548237,
+        "min_samples_leaf": 5,
+        "random_state": 42
+      }
+    },
+    {
+      "model_name": "XGBoostModel",
+      "n_trials_default": 100,
+      "optimization_metric": "average_precision",
+      "search_space": {
+        "n_estimators": {
+          "type": "int",
+          "low": 200,
+          "high": 800
+        },
+        "max_depth": {
+          "type": "int",
+          "low": 3,
+          "high": 12
+        },
+        "learning_rate": {
+          "type": "float",
+          "low": 0.01,
+          "high": 0.3,
+          "log": true
+        },
+        "subsample": {
+          "type": "float",
+          "low": 0.6,
+          "high": 1.0
+        },
+        "colsample_bytree": {
+          "type": "float",
+          "low": 0.6,
+          "high": 1.0
+        },
+        "reg_lambda": {
+          "type": "float",
+          "low": 0.0001,
+          "high": 10.0,
+          "log": true
+        }
+      },
+      "pipeline_final_params": {
+        "n_estimators": 747,
+        "max_depth": 10,
+        "learning_rate": 0.015613690158405065,
+        "subsample": 0.6387713040323718,
+        "colsample_bytree": 0.6680837435903048,
+        "reg_lambda": 5.142633483677166,
+        "random_state": 42,
+        "tree_method": "hist",
+        "device": "cuda"
+      },
+      "pipeline_runtime_params": {
+        "scale_pos_weight": "computed from y_train as negatives divided by positives"
+      }
+    },
+    {
+      "model_name": "GraphSAGEModel",
+      "n_trials_default": 20,
+      "optimization_metric": "average_precision",
+      "search_space": {
+        "hidden_dim": {
+          "type": "categorical",
+          "values": [
+            32,
+            64,
+            128
+          ]
+        },
+        "num_layers": {
+          "type": "categorical",
+          "values": [
+            2,
+            3,
+            4
+          ]
+        },
+        "dropout": {
+          "type": "float",
+          "low": 0.1,
+          "high": 0.5
+        },
+        "lr": {
+          "type": "float",
+          "low": 0.0001,
+          "high": 0.0005,
+          "log": true
+        },
+        "sup_batch_size": {
+          "type": "categorical",
+          "values": [
+            4096,
+            8192,
+            16384
+          ]
+        },
+        "pos_weight": {
+          "type": "categorical",
+          "values": [
+            "auto",
+            20,
+            40,
+            60
+          ]
+        }
+      },
+      "pipeline_final_params": {
+        "hidden_dim": 64,
+        "num_layers": 2,
+        "dropout": 0.2890856026631795,
+        "lr": 0.0003017731896320215,
+        "sup_batch_size": 8192,
+        "pos_weight": 20,
+        "eval_chunk_steps": 1
+      }
+    }
+  ]
+}
