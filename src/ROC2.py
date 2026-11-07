@@ -3,9 +3,9 @@ from matplotlib.gridspec import GridSpec
 from matplotlib.ticker import FuncFormatter
 
 models = ['Véletlen erdő', 'XGBoost', 'GraphSAGE', 'Hibrid']
-auc_pr  = [0.9430, 0.9434, 0.8708, 0.9466]
-auc_roc = [0.9987, 0.9988, 0.9981, 0.9989]
-cost    = [25737, 25163, 30974, 25235]
+auc_pr  = [0.94302, 0.94314, 0.86106, 0.94672]
+auc_roc = [0.99872, 0.99877, 0.99806, 0.99892]
+cost    = [25736.53, 25649.64, 30096.90, 24952.57]
 
 colors = ['#EBD4D8', '#DDB7BE', '#C98C98', '#8C3D52']
 
@@ -20,7 +20,7 @@ for ax, vals, title, fmt in zip(
     [ax1, ax2, ax3],
     [auc_pr, auc_roc, cost],
     ['AUC-PR', 'AUC-ROC', 'Teszt adathalmazon mért költség (€)'],
-    ['{:.4f}', '{:.4f}', '{:.0f}']
+    ['{:.4f}', '{:.4f}', '{:.2f}']
 ):
     bars = ax.bar(models, vals, color=colors)
 
@@ -42,14 +42,14 @@ for ax, vals, title, fmt in zip(
         )
     else:
         ax.yaxis.set_major_formatter(
-            FuncFormatter(lambda value, _: f'{value:.0f}')
+            FuncFormatter(lambda value, _: f'{value:.2f}'.replace('.', ','))
         )
 
     for bar, v in zip(bars, vals):
         label = (
             fmt.format(v).replace('.', ',')
             if title in ('AUC-PR', 'AUC-ROC')
-            else fmt.format(v)
+            else fmt.format(v).replace('.', ',')
         )
         ax.text(
             bar.get_x() + bar.get_width()/2,
